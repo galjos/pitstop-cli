@@ -40,8 +40,8 @@ PYTHONPATH=src python3 -m pitstop --help
 ## Usage
 
 ```bash
-# Cheapest diesel in a municipality
-pitstop stations --comune ROMA --fuel Gasolio --cheapest --limit 5
+# Cheapest diesel in a municipality (skip placeholder prices with --min-price)
+pitstop stations --comune ROMA --fuel Gasolio --cheapest --min-price 1.2 --limit 5
 
 # Self-service petrol within 5 km of a coordinate, as JSON
 pitstop stations --near 46.498,11.354 --radius 5 --fuel Benzina --self --json
@@ -50,7 +50,29 @@ pitstop stations --near 46.498,11.354 --radius 5 --fuel Benzina --self --json
 pitstop fuels
 ```
 
-`stations` flags: `--comune`, `--provincia`, `--brand`, `--near "lat,lon"`, `--radius`, `--fuel` (substring, case-insensitive), `--self`, `--served`, `--cheapest` (needs `--fuel`), `--limit`, `--json`. Loading flags (`--refresh`, `--max-age`, `--timeout`) apply to any data command.
+`stations` flags: `--comune`, `--provincia`, `--brand`, `--near "lat,lon"`, `--radius`, `--fuel` (substring, case-insensitive), `--self`, `--served`, `--cheapest` (needs `--fuel`), `--min-price` (drop values below a floor; e.g. `1.2` to skip placeholders), `--limit`, `--json`. Loading flags (`--refresh`, `--max-age`, `--timeout`) apply to any data command.
+
+## MCP server
+
+For agents that speak MCP, the same data is exposed as tools (`list_fuels`, `find_stations`, `find_cheapest`) over the shared core:
+
+```bash
+pip install "pitstop[mcp]"   # or: uv tool install "pitstop[mcp]"
+pitstop-mcp                  # stdio MCP server
+```
+
+Example client config entry:
+
+```json
+{ "mcpServers": { "pitstop": { "command": "pitstop-mcp" } } }
+```
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest -q
+```
 
 ## Automation contract
 
@@ -62,12 +84,9 @@ pitstop fuels
 
 ## Status & roadmap
 
-v0.0.1 — working fuel-price core (registry+price join, filters, proximity, cheapest, JSON).
+v0.1.0 — fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, JSON), an MCP server, a Claude skill, tests, and CI.
 
 Planned, roughly in order:
-- price sanity-floor to suppress placeholder values;
-- an **MCP server** exposing the same core as agent tools;
-- a Claude **skill** that drives the CLI;
 - **EV charging** (locations via Open Charge Map; prices via the AFIR National Access Point / DATEX II as that data matures);
 - additional countries behind a per-country source adapter (e.g. Germany Tankerkönig, France/Spain official feeds).
 

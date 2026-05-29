@@ -59,6 +59,8 @@ def _build_parser() -> argparse.ArgumentParser:
     stations.add_argument("--self", dest="self_only", action="store_true", help="only self-service prices")
     stations.add_argument("--served", dest="served_only", action="store_true", help="only served prices")
     stations.add_argument("--cheapest", action="store_true", help="sort by ascending price (needs --fuel)")
+    stations.add_argument("--min-price", dest="min_price", type=float, default=0.0,
+                          help="drop prices below this floor (e.g. 1.2 to skip placeholder values); 0 = off")
     stations.add_argument("--limit", type=int, default=20, help="max stations; 0 = no limit")
     stations.set_defaults(func=_cmd_stations)
 
@@ -104,31 +106,20 @@ def _cmd_stations(args) -> int:
 
     ds = _load(args)
 
-    out: list[core.Station] = []
-    for st in ds.stations.values():
-        if args.comune and st.comune.casefold() != args.comune.strip().casefold():
-            continue
-        if args.provincia and st.provincia.casefold() != args.provincia.strip().casefold():
-            continue
-        if args.brand and args.brand.lower() not in st.brand.lower():
-            continue
-
-        prices = core.filter_prices(st.prices, args.fuel, args.self_only, args.served_only)
-        if (args.fuel or args.self_only or args.served_only) and not prices:
-            continue
-        st.prices = prices
-
-        if use_near:
-            d = core.haversine_km(near_lat, near_lon, st.lat, st.lon)
-            if d > args.radius:
-                continue
-            st.distance_km = round(d, 2)
-        out.append(st)
-
-    _sort_stations(out, cheapest=args.cheapest, use_near=use_near)
-
-    if args.limit > 0:
-        out = out[: args.limit]
+    out = core.query_stations(
+        ds,
+        comune=args.comune,
+        provincia=args.provincia,
+        brand=args.brand,
+        near=(near_lat, near_lon) if use_near else None,
+        radius_km=args.radius,
+        fuel=args.fuel,
+        self_only=args.self_only,
+        served_only=args.served_only,
+        cheapest=args.cheapest,
+        min_price=args.min_price,
+        limit=args.limit,
+    )
 
     query: dict = {}
     for key, val in (("comune", args.comune), ("provincia", args.provincia),
@@ -144,6 +135,8 @@ def _cmd_stations(args) -> int:
         query["served"] = True
     if args.cheapest:
         query["cheapest"] = True
+    if args.min_price > 0:
+        query["min_price"] = args.min_price
 
     if args.as_json:
         return _print_stations_json(ds, out, query)
@@ -174,28 +167,8 @@ def _cmd_fuels(args) -> int:
     return 0
 
 
-def _sort_stations(out: list[core.Station], *, cheapest: bool, use_near: bool) -> None:
-    if cheapest:
-        out.sort(key=lambda s: (core.min_price(s.prices) is None,
-                                core.min_price(s.prices) or 0.0))
-    elif use_near:
-        out.sort(key=lambda s: s.distance_km if s.distance_km is not None else float("inf"))
-    else:
-        out.sort(key=lambda s: (s.comune, s.name))
-
-
 def _print_stations_json(ds: core.Dataset, stations: list[core.Station], query: dict) -> int:
-    _dump({
-        "source": core.SOURCE_NAME,
-        "source_url": core.SOURCE_URL,
-        "registry_extraction_date": ds.registry_date,
-        "price_extraction_date": ds.price_date,
-        "generated_at": core.now_iso(),
-        "query": query,
-        "count": len(stations),
-        "stations": [s.to_dict() for s in stations],
-        "disclaimer": core.DISCLAIMER,
-    })
+    _dump(core.response_envelope(ds, stations, query))
     return 0
 
 

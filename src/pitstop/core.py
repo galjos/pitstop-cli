@@ -204,7 +204,11 @@ def load(
 
 
 def filter_prices(
-    prices: list[Price], fuel: str = "", self_only: bool = False, served_only: bool = False
+    prices: list[Price],
+    fuel: str = "",
+    self_only: bool = False,
+    served_only: bool = False,
+    min_price: float = 0.0,
 ) -> list[Price]:
     fuel = fuel.strip().lower()
     out = []
@@ -215,12 +219,79 @@ def filter_prices(
             continue
         if served_only and p.self_service:
             continue
+        if min_price > 0 and p.price < min_price:
+            continue
         out.append(p)
     return out
 
 
-def min_price(prices: list[Price]) -> float | None:
+def min_price_of(prices: list[Price]) -> float | None:
     return min((p.price for p in prices), default=None)
+
+
+def query_stations(
+    ds: Dataset,
+    *,
+    comune: str = "",
+    provincia: str = "",
+    brand: str = "",
+    near: tuple[float, float] | None = None,
+    radius_km: float = 10.0,
+    fuel: str = "",
+    self_only: bool = False,
+    served_only: bool = False,
+    cheapest: bool = False,
+    min_price: float = 0.0,
+    limit: int = 20,
+) -> list[Station]:
+    """Filter, sort, and limit stations. Mutates the dataset's Station objects
+    (narrows prices, sets distance_km), so pass a freshly loaded Dataset."""
+    out: list[Station] = []
+    for st in ds.stations.values():
+        if comune and st.comune.casefold() != comune.strip().casefold():
+            continue
+        if provincia and st.provincia.casefold() != provincia.strip().casefold():
+            continue
+        if brand and brand.lower() not in st.brand.lower():
+            continue
+
+        prices = filter_prices(st.prices, fuel, self_only, served_only, min_price)
+        if (fuel or self_only or served_only or min_price > 0) and not prices:
+            continue
+        st.prices = prices
+
+        if near is not None:
+            d = haversine_km(near[0], near[1], st.lat, st.lon)
+            if d > radius_km:
+                continue
+            st.distance_km = round(d, 2)
+        out.append(st)
+
+    if cheapest:
+        out.sort(key=lambda s: (min_price_of(s.prices) is None, min_price_of(s.prices) or 0.0))
+    elif near is not None:
+        out.sort(key=lambda s: s.distance_km if s.distance_km is not None else float("inf"))
+    else:
+        out.sort(key=lambda s: (s.comune, s.name))
+
+    if limit > 0:
+        out = out[:limit]
+    return out
+
+
+def response_envelope(ds: Dataset, stations: list[Station], query: dict) -> dict:
+    """Build the stable JSON response object shared by the CLI and MCP server."""
+    return {
+        "source": SOURCE_NAME,
+        "source_url": SOURCE_URL,
+        "registry_extraction_date": ds.registry_date,
+        "price_extraction_date": ds.price_date,
+        "generated_at": now_iso(),
+        "query": query,
+        "count": len(stations),
+        "stations": [s.to_dict() for s in stations],
+        "disclaimer": DISCLAIMER,
+    }
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

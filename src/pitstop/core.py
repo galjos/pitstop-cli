@@ -229,6 +229,20 @@ def min_price_of(prices: list[Price]) -> float | None:
     return min((p.price for p in prices), default=None)
 
 
+def default_floor(fuel: str) -> float:
+    """A sensible default min-price floor for ranking, given a fuel name.
+
+    The common placeholder value (1.000) only corrupts cheapest-ranking for
+    fuels whose real price is above it (petrol, diesel, methane ~1.3-2.5/kg), so
+    those get a 1.2 floor. GPL (LPG, ~0.7-0.9) sits below 1.000, so a 1.2 floor
+    would wrongly drop every real price; GPL gets no floor (its 1.000 placeholders
+    sink harmlessly to the bottom of an ascending sort)."""
+    f = fuel.strip().lower()
+    if not f:
+        return 0.0
+    return 0.0 if "gpl" in f else 1.2
+
+
 def query_stations(
     ds: Dataset,
     *,

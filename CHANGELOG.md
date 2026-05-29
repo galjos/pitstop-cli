@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-05-29
+
+### Fixed
+- MCP `find_cheapest` now applies a **fuel-aware** default price floor instead of
+  a fixed `1.2`. The old default silently returned no results for cheaper fuels
+  like GPL (~€0.77). Petrol/diesel/methane keep the `1.2` placeholder floor; GPL
+  gets none. Pass `min_price >= 0` to override. Surfaced by an agent simulation.
+
 ## [0.1.0] - 2026-05-29
 
 ### Added
@@ -41,5 +49,6 @@ Initial release.
 - `--fuel` is a substring match, so `Gasolio` also matches variants such as
   `Gasolio Alpino`.
 
+[0.1.1]: https://github.com/galjos/pitstop/releases/tag/v0.1.1
 [0.1.0]: https://github.com/galjos/pitstop/releases/tag/v0.1.0
 [0.0.1]: https://github.com/galjos/pitstop/releases/tag/v0.0.1

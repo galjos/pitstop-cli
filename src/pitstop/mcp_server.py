@@ -29,8 +29,10 @@ _FIND_STATIONS_DESC = (
 
 _FIND_CHEAPEST_DESC = (
     "Find the cheapest Italian stations for a given fuel, near a coordinate "
-    '("lat,lon") or in a comune. Defaults min_price=1.2 to skip placeholder values. '
-    "Returns a provenance-carrying JSON envelope sorted cheapest-first." + _CAVEATS
+    '("lat,lon") or in a comune. By default applies a fuel-aware price floor '
+    "(skips placeholder values for petrol/diesel, no floor for cheap fuels like "
+    "GPL); pass min_price >= 0 to override. Returns a provenance-carrying JSON "
+    "envelope sorted cheapest-first." + _CAVEATS
 )
 
 
@@ -113,9 +115,11 @@ def find_cheapest(
     near: str = "",
     radius_km: float = 10.0,
     self_only: bool = False,
-    min_price: float = 1.2,
+    min_price: float = -1.0,
     limit: int = 5,
 ) -> dict:
+    if min_price < 0:
+        min_price = core.default_floor(fuel)
     ds = core.load()
     stations = core.query_stations(
         ds,

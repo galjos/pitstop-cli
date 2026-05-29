@@ -107,6 +107,16 @@ def test_min_price_helper():
     assert core.min_price_of([]) is None
 
 
+def test_default_floor():
+    # petrol/diesel/methane: real prices > placeholder 1.000, so apply a 1.2 floor
+    assert core.default_floor("Gasolio") == 1.2
+    assert core.default_floor("Benzina") == 1.2
+    assert core.default_floor("Metano") == 1.2
+    # GPL is genuinely cheaper than 1.000 -> no floor, or all real prices vanish
+    assert core.default_floor("GPL") == 0.0
+    assert core.default_floor("") == 0.0
+
+
 def test_haversine_zero_and_known():
     assert core.haversine_km(41.9, 12.5, 41.9, 12.5) == pytest.approx(0.0, abs=1e-9)
     # Rome -> Milano is roughly 477 km

@@ -13,7 +13,10 @@ Unofficial community project. Not affiliated with or endorsed by MIMIT. Fuel dat
 - **Source:** MIMIT _Osservaprezzi Carburanti_ open data — a station registry (`anagrafica`, ~23.8k active stations) and a daily practiced-price file, joined on `idImpianto`.
 - **Freshness:** prices reflect values reported by operators **as of ~08:00 the day before** the published extraction date. This is **daily, not real-time.**
 - **Coverage:** Italy only (by design, for now).
-- **Known caveat:** some operators report placeholder values (e.g. `1.000`); `--cheapest` can surface these. A future sanity-floor flag is planned. Inspect the `price`/`fuel` fields rather than trusting rank blindly.
+- **Known caveats:**
+  - Some operators report placeholder values (e.g. `1.000`); use `--min-price` (e.g. `1.2`) to drop them.
+  - Some price records are **stale** (a few were last updated years ago); use `--fresh-within-days` and check the `UPDATED` column / `updated` field.
+  - Some stations are **mis-geocoded** in the registry, so `--near` results can include far-away stations — check each result's `comune`/`address`.
 
 ## Install
 
@@ -40,8 +43,8 @@ PYTHONPATH=src python3 -m pitstop --help
 ## Usage
 
 ```bash
-# Cheapest diesel in a municipality (skip placeholder prices with --min-price)
-pitstop stations --comune ROMA --fuel Gasolio --cheapest --min-price 1.2 --limit 5
+# Cheapest *fresh* diesel in a municipality (skip placeholder + stale prices)
+pitstop stations --comune ROMA --fuel Gasolio --cheapest --min-price 1.2 --fresh-within-days 90 --limit 5
 
 # Self-service petrol within 5 km of a coordinate, as JSON
 pitstop stations --near 46.498,11.354 --radius 5 --fuel Benzina --self --json
@@ -50,7 +53,7 @@ pitstop stations --near 46.498,11.354 --radius 5 --fuel Benzina --self --json
 pitstop fuels
 ```
 
-`stations` flags: `--comune`, `--provincia`, `--brand`, `--near "lat,lon"`, `--radius`, `--fuel` (substring, case-insensitive), `--self`, `--served`, `--cheapest` (needs `--fuel`), `--min-price` (drop values below a floor; e.g. `1.2` to skip placeholders), `--limit`, `--json`. Loading flags (`--refresh`, `--max-age`, `--timeout`) apply to any data command.
+`stations` flags: `--comune`, `--provincia`, `--brand`, `--near "lat,lon"`, `--radius`, `--fuel` (substring, case-insensitive), `--self`, `--served`, `--cheapest` (needs `--fuel`), `--min-price` (drop values below a floor; e.g. `1.2` to skip placeholders), `--fresh-within-days` (drop prices last updated more than N days ago), `--limit`, `--json`. Loading flags (`--refresh`, `--max-age`, `--timeout`) apply to any data command.
 
 ## MCP server
 
@@ -84,7 +87,7 @@ pytest -q
 
 ## Status & roadmap
 
-v0.1.0 — fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, JSON), an MCP server, a Claude skill, tests, and CI.
+v0.2.0 — fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, `--fresh-within-days` freshness filter, JSON), an MCP server, a Claude skill, tests, and CI.
 
 Planned, roughly in order:
 - **EV charging** (locations via Open Charge Map; prices via the AFIR National Access Point / DATEX II as that data matures);

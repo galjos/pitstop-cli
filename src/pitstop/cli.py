@@ -61,6 +61,8 @@ def _build_parser() -> argparse.ArgumentParser:
     stations.add_argument("--cheapest", action="store_true", help="sort by ascending price (needs --fuel)")
     stations.add_argument("--min-price", dest="min_price", type=float, default=0.0,
                           help="drop prices below this floor (e.g. 1.2 to skip placeholder values); 0 = off")
+    stations.add_argument("--fresh-within-days", dest="fresh_days", type=int, default=0,
+                          help="drop prices last updated more than N days ago; 0 = off")
     stations.add_argument("--limit", type=int, default=20, help="max stations; 0 = no limit")
     stations.set_defaults(func=_cmd_stations)
 
@@ -118,6 +120,7 @@ def _cmd_stations(args) -> int:
         served_only=args.served_only,
         cheapest=args.cheapest,
         min_price=args.min_price,
+        max_age_days=args.fresh_days,
         limit=args.limit,
     )
 
@@ -137,6 +140,8 @@ def _cmd_stations(args) -> int:
         query["cheapest"] = True
     if args.min_price > 0:
         query["min_price"] = args.min_price
+    if args.fresh_days > 0:
+        query["fresh_within_days"] = args.fresh_days
 
     if args.as_json:
         return _print_stations_json(ds, out, query)
@@ -180,12 +185,13 @@ def _print_stations_table(stations: list[core.Station], use_near: bool) -> int:
             mode = "" if p is None else ("self" if p.self_service else "served")
             fuel = "" if p is None else p.fuel
             price = "" if p is None else f"{p.price:.3f}"
-            base = [st.brand, st.comune, st.provincia, fuel, price, mode, st.name]
+            updated = "" if p is None else (p.updated[:10])
+            base = [st.brand, st.comune, st.provincia, fuel, price, mode, updated, st.name]
             if use_near:
                 base = [f"{st.distance_km:.2f}"] + base
             rows.append(base)
 
-    headers = (["DIST_KM"] if use_near else []) + ["BRAND", "COMUNE", "PR", "FUEL", "PRICE", "MODE", "NAME"]
+    headers = (["DIST_KM"] if use_near else []) + ["BRAND", "COMUNE", "PR", "FUEL", "PRICE", "MODE", "UPDATED", "NAME"]
     rows.insert(0, headers)
     widths = [max(len(r[i]) for r in rows) for i in range(len(headers))]
     for r in rows:

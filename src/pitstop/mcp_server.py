@@ -31,8 +31,9 @@ _FIND_CHEAPEST_DESC = (
     "Find the cheapest Italian stations for a given fuel, near a coordinate "
     '("lat,lon") or in a comune. By default applies a fuel-aware price floor '
     "(skips placeholder values for petrol/diesel, no floor for cheap fuels like "
-    "GPL); pass min_price >= 0 to override. Returns a provenance-carrying JSON "
-    "envelope sorted cheapest-first." + _CAVEATS
+    "GPL) and ignores prices not updated in the last 90 days (stale records); "
+    "pass min_price >= 0 or max_age_days >= 0 to override. Returns a "
+    "provenance-carrying JSON envelope sorted cheapest-first." + _CAVEATS
 )
 
 
@@ -72,6 +73,7 @@ def find_stations(
     served_only: bool = False,
     cheapest: bool = False,
     min_price: float = 0.0,
+    max_age_days: int = 0,
     limit: int = 20,
 ) -> dict:
     ds = core.load()
@@ -87,6 +89,7 @@ def find_stations(
         served_only=served_only,
         cheapest=cheapest,
         min_price=min_price,
+        max_age_days=max_age_days,
         limit=limit,
     )
     query = {
@@ -102,6 +105,7 @@ def find_stations(
             "served": served_only or None,
             "cheapest": cheapest or None,
             "min_price": min_price or None,
+            "fresh_within_days": max_age_days or None,
         }.items()
         if v not in ("", None, False)
     }
@@ -116,10 +120,13 @@ def find_cheapest(
     radius_km: float = 10.0,
     self_only: bool = False,
     min_price: float = -1.0,
+    max_age_days: int = -1,
     limit: int = 5,
 ) -> dict:
     if min_price < 0:
         min_price = core.default_floor(fuel)
+    if max_age_days < 0:
+        max_age_days = 90  # ignore stale records when ranking by price
     ds = core.load()
     stations = core.query_stations(
         ds,
@@ -130,9 +137,15 @@ def find_cheapest(
         self_only=self_only,
         cheapest=True,
         min_price=min_price,
+        max_age_days=max_age_days,
         limit=limit,
     )
-    query: dict = {"fuel": fuel, "cheapest": True, "min_price": min_price}
+    query: dict = {
+        "fuel": fuel,
+        "cheapest": True,
+        "min_price": min_price,
+        "fresh_within_days": max_age_days,
+    }
     if comune:
         query["comune"] = comune
     if near.strip():

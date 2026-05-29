@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-05-29
+
+### Added
+- **Price freshness filtering.** `--fresh-within-days N` on `pitstop stations`
+  (and `max_age_days` on the MCP tools) drops prices whose `updated` timestamp is
+  older than N days. MCP `find_cheapest` defaults to 90 days so stale records
+  cannot win "cheapest".
+- `UPDATED` column in the `pitstop stations` table so price recency is visible.
+
+### Fixed
+- A stale record could rank as cheapest: a 2023 "Gasolio Alpino" at €1.749 was
+  returned as the cheapest diesel near Bolzano even though that station's current
+  diesel is €2.115 (national self-service average ~€2.03 on 2026-05-29). The
+  freshness filter resolves this.
+
+### Known limitations
+- Some stations are mis-geocoded in the registry (e.g. a Val Pusteria station
+  placed ~5 km from Bolzano), so proximity results can include far-away stations.
+  Check each result's `comune`/`address`.
+
 ## [0.1.1] - 2026-05-29
 
 ### Fixed
@@ -49,6 +69,7 @@ Initial release.
 - `--fuel` is a substring match, so `Gasolio` also matches variants such as
   `Gasolio Alpino`.
 
+[0.2.0]: https://github.com/galjos/pitstop/releases/tag/v0.2.0
 [0.1.1]: https://github.com/galjos/pitstop/releases/tag/v0.1.1
 [0.1.0]: https://github.com/galjos/pitstop/releases/tag/v0.1.0
 [0.0.1]: https://github.com/galjos/pitstop/releases/tag/v0.0.1

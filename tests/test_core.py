@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -105,6 +106,26 @@ def test_filter_prices_min_price_drops_placeholders():
 def test_min_price_helper():
     assert core.min_price_of([core.Price("X", 2.0, True, ""), core.Price("Y", 1.5, True, "")]) == 1.5
     assert core.min_price_of([]) is None
+
+
+def test_price_age_days():
+    today = date(2026, 5, 29)
+    assert core.price_age_days("2026-05-27T08:00:00", today) == 2
+    assert core.price_age_days("27/05/2023 07:54:52", today) == 1098
+    assert core.price_age_days("not a date", today) is None
+
+
+def test_filter_prices_max_age_drops_stale():
+    today = date(2026, 5, 29)
+    prices = [
+        core.Price("Gasolio", 2.115, True, "2026-05-27T23:38:00"),
+        core.Price("Gasolio Alpino", 1.749, True, "2023-06-17T07:54:52"),  # stale
+    ]
+    out = core.filter_prices(prices, fuel="gasolio", max_age_days=90, today=today)
+    assert [p.price for p in out] == [2.115]
+    # without the freshness filter, the stale cheap one is kept
+    out_all = core.filter_prices(prices, fuel="gasolio", today=today)
+    assert len(out_all) == 2
 
 
 def test_default_floor():

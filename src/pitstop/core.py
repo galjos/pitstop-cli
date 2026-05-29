@@ -10,7 +10,7 @@ import os
 import time
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 ANAGRAFICA_URL = "https://www.mimit.gov.it/images/exportCSV/anagrafica_impianti_attivi.csv"
@@ -209,8 +209,12 @@ def filter_prices(
     self_only: bool = False,
     served_only: bool = False,
     min_price: float = 0.0,
+    max_age_days: int = 0,
+    today: date | None = None,
 ) -> list[Price]:
     fuel = fuel.strip().lower()
+    if max_age_days > 0 and today is None:
+        today = date.today()
     out = []
     for p in prices:
         if fuel and fuel not in p.fuel.lower():
@@ -221,8 +225,26 @@ def filter_prices(
             continue
         if min_price > 0 and p.price < min_price:
             continue
+        if max_age_days > 0:
+            age = price_age_days(p.updated, today)
+            if age is not None and age > max_age_days:
+                continue
         out.append(p)
     return out
+
+
+def price_age_days(updated: str, today: date | None = None) -> int | None:
+    """Age of a price in days from its `updated` timestamp. None if unparseable."""
+    if today is None:
+        today = date.today()
+    try:
+        d = datetime.fromisoformat(updated).date()
+    except ValueError:
+        try:
+            d = datetime.strptime(updated.split()[0], "%d/%m/%Y").date()
+        except (ValueError, IndexError):
+            return None
+    return (today - d).days
 
 
 def min_price_of(prices: list[Price]) -> float | None:
@@ -256,10 +278,12 @@ def query_stations(
     served_only: bool = False,
     cheapest: bool = False,
     min_price: float = 0.0,
+    max_age_days: int = 0,
     limit: int = 20,
 ) -> list[Station]:
     """Filter, sort, and limit stations. Mutates the dataset's Station objects
     (narrows prices, sets distance_km), so pass a freshly loaded Dataset."""
+    today = date.today() if max_age_days > 0 else None
     out: list[Station] = []
     for st in ds.stations.values():
         if comune and st.comune.casefold() != comune.strip().casefold():
@@ -269,8 +293,10 @@ def query_stations(
         if brand and brand.lower() not in st.brand.lower():
             continue
 
-        prices = filter_prices(st.prices, fuel, self_only, served_only, min_price)
-        if (fuel or self_only or served_only or min_price > 0) and not prices:
+        prices = filter_prices(
+            st.prices, fuel, self_only, served_only, min_price, max_age_days, today
+        )
+        if (fuel or self_only or served_only or min_price > 0 or max_age_days > 0) and not prices:
             continue
         st.prices = prices
 

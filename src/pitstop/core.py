@@ -7,6 +7,7 @@ from __future__ import annotations
 import csv
 import math
 import os
+import statistics
 import time
 import urllib.request
 from dataclasses import dataclass, field
@@ -62,6 +63,7 @@ class Station:
     lon: float
     prices: list[Price] = field(default_factory=list)
     distance_km: float | None = None
+    coordinate_suspect: bool = False
 
     def to_dict(self) -> dict:
         d = {
@@ -79,6 +81,8 @@ class Station:
         }
         if self.distance_km is not None:
             d["distance_km"] = self.distance_km
+        if self.coordinate_suspect:
+            d["coordinate_suspect"] = True
         return d
 
 
@@ -284,6 +288,7 @@ def query_stations(
     """Filter, sort, and limit stations. Mutates the dataset's Station objects
     (narrows prices, sets distance_km), so pass a freshly loaded Dataset."""
     today = date.today() if max_age_days > 0 else None
+    centroids = comune_centroids(ds)
     out: list[Station] = []
     for st in ds.stations.values():
         if comune and st.comune.casefold() != comune.strip().casefold():
@@ -300,7 +305,19 @@ def query_stations(
             continue
         st.prices = prices
 
+        # Flag coordinates that are implausible or far from the station's
+        # comune-cluster. Single-station comuni cannot be validated this way
+        # and remain unflagged — a known limitation requiring a second source.
+        if not in_italy(st.lat, st.lon):
+            st.coordinate_suspect = True
+        else:
+            c = centroids.get(st.comune.upper())
+            if c is not None and haversine_km(c[0], c[1], st.lat, st.lon) > SUSPECT_DISTANCE_KM:
+                st.coordinate_suspect = True
+
         if near is not None:
+            if not in_italy(st.lat, st.lon):
+                continue  # invalid coords cannot be reliably near anything
             d = haversine_km(near[0], near[1], st.lat, st.lon)
             if d > radius_km:
                 continue
@@ -331,6 +348,30 @@ def response_envelope(ds: Dataset, stations: list[Station], query: dict) -> dict
         "count": len(stations),
         "stations": [s.to_dict() for s in stations],
         "disclaimer": DISCLAIMER,
+    }
+
+
+ITALY_BBOX = (35.0, 47.6, 6.0, 19.0)  # min_lat, max_lat, min_lon, max_lon
+SUSPECT_DISTANCE_KM = 30.0
+
+
+def in_italy(lat: float, lon: float) -> bool:
+    """Whether a coordinate sits inside a generous Italy bounding box."""
+    return ITALY_BBOX[0] <= lat <= ITALY_BBOX[1] and ITALY_BBOX[2] <= lon <= ITALY_BBOX[3]
+
+
+def comune_centroids(ds: "Dataset", min_stations: int = 3) -> dict[str, tuple[float, float]]:
+    """Median (lat, lon) per comune, only for comuni with at least `min_stations`
+    stations. The median resists individual mis-geocoded outliers."""
+    groups: dict[str, list[tuple[float, float]]] = {}
+    for st in ds.stations.values():
+        if not in_italy(st.lat, st.lon):
+            continue
+        groups.setdefault(st.comune.upper(), []).append((st.lat, st.lon))
+    return {
+        com: (statistics.median(p[0] for p in pts), statistics.median(p[1] for p in pts))
+        for com, pts in groups.items()
+        if len(pts) >= min_stations
     }
 
 

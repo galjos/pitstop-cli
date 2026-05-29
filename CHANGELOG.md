@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-29
+
+### Added
+- `coordinate_suspect` flag on stations whose registry coordinate is outside the
+  Italy bounding box **or** more than 30 km from the median of their comune's
+  other stations. Flags ~1% of stations (211/23.8k). Surfaced in JSON output and
+  marked with `*` in the table. Advisory — not filtered by default.
+- `--near` skips stations whose coordinates fall outside the Italy bounding box.
+
+### Known limitations
+- Single-station comuni (e.g. RASUN-ANTERSELVA, the original Rasen example)
+  **cannot** be validated by the comune-cluster method — there is no sibling
+  station to compare against. The robust fix for this class requires a second
+  data source such as an ISTAT comune-coordinates reference. Tracked as the next
+  step.
+- A few comuni span large or split geographies (island groups, archipelagos), so
+  some flagged outliers are legitimately distant rather than mis-geocoded.
+
 ## [0.2.0] - 2026-05-29
 
 ### Added
@@ -69,6 +87,7 @@ Initial release.
 - `--fuel` is a substring match, so `Gasolio` also matches variants such as
   `Gasolio Alpino`.
 
+[0.3.0]: https://github.com/galjos/pitstop/releases/tag/v0.3.0
 [0.2.0]: https://github.com/galjos/pitstop/releases/tag/v0.2.0
 [0.1.1]: https://github.com/galjos/pitstop/releases/tag/v0.1.1
 [0.1.0]: https://github.com/galjos/pitstop/releases/tag/v0.1.0

@@ -16,7 +16,7 @@ Unofficial community project. Not affiliated with or endorsed by MIMIT. Fuel dat
 - **Known caveats:**
   - Some operators report placeholder values (e.g. `1.000`); use `--min-price` (e.g. `1.2`) to drop them.
   - Some price records are **stale** (a few were last updated years ago); use `--fresh-within-days` and check the `UPDATED` column / `updated` field.
-  - Some stations are **mis-geocoded** in the registry, so `--near` results can include far-away stations — check each result's `comune`/`address`.
+  - Some stations are **mis-geocoded** in the registry. v0.3.0 annotates stations >30 km from their comune's median (or outside Italy) as `coordinate_suspect` (`*` in the table), and `--near` skips coordinates outside the Italy bounding box. Single-station comuni cannot be validated this way and need a second source (planned).
 
 ## Install
 
@@ -87,9 +87,10 @@ pytest -q
 
 ## Status & roadmap
 
-v0.2.0 — fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, `--fresh-within-days` freshness filter, JSON), an MCP server, a Claude skill, tests, and CI.
+v0.3.0 — fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, `--fresh-within-days` freshness filter, `coordinate_suspect` geocoding signal, JSON), an MCP server, a Claude skill, tests, and CI.
 
 Planned, roughly in order:
+- a **second data source** of Italian comune coordinates (e.g. ISTAT) to validate single-station-comune coordinates that the self-contained method can't reach;
 - **EV charging** (locations via Open Charge Map; prices via the AFIR National Access Point / DATEX II as that data matures);
 - additional countries behind a per-country source adapter (e.g. Germany Tankerkönig, France/Spain official feeds).
 

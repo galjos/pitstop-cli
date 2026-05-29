@@ -138,6 +138,53 @@ def test_default_floor():
     assert core.default_floor("") == 0.0
 
 
+def test_in_italy_bbox():
+    assert core.in_italy(41.9, 12.5)  # Rome
+    assert core.in_italy(46.5, 11.35)  # Bolzano
+    assert not core.in_italy(0.0, 0.0)
+    assert not core.in_italy(48.85, 2.35)  # Paris
+    assert not core.in_italy(40.0, 25.0)  # Aegean
+
+
+def test_comune_centroids_and_suspect_flag():
+    # 3 ROMA stations clustered near Rome + 1 mis-geocoded at Bolzano coords;
+    # the cluster of 3 makes ROMA a checkable comune (>=3 stations) and the
+    # outlier should be flagged.
+    def st(sid, lat, lon):
+        return core.Station(sid, "", "", "", f"S{sid}", "", "ROMA", "RM", lat, lon,
+                            [core.Price("Benzina", 2.0, True, "2026-05-27T00:00:00")])
+    ds = core.Dataset(
+        stations={
+            "1": st("1", 41.90, 12.49),
+            "2": st("2", 41.91, 12.50),
+            "3": st("3", 41.89, 12.48),
+            "4": st("4", 46.50, 11.35),  # ~430 km from Rome -> suspect
+        },
+        registry_date="2026-05-28",
+        price_date="2026-05-28",
+    )
+    cents = core.comune_centroids(ds)
+    assert "ROMA" in cents
+    assert cents["ROMA"][0] == pytest.approx(41.90, abs=0.05)
+
+    out = core.query_stations(ds, comune="ROMA", limit=0)
+    flagged = {s.id: s.coordinate_suspect for s in out}
+    assert flagged == {"1": False, "2": False, "3": False, "4": True}
+
+
+def test_query_stations_skips_invalid_coords_for_near():
+    bad = core.Station("X", "", "", "", "S", "", "NOWHERE", "ZZ", 0.0, 0.0,
+                       [core.Price("Benzina", 2.0, True, "2026-05-27T00:00:00")])
+    good = core.Station("Y", "", "", "", "S", "", "ROMA", "RM", 41.90, 12.50,
+                        [core.Price("Benzina", 2.0, True, "2026-05-27T00:00:00")])
+    ds = core.Dataset(
+        stations={"X": bad, "Y": good},
+        registry_date="2026-05-28", price_date="2026-05-28",
+    )
+    out = core.query_stations(ds, near=(41.90, 12.50), radius_km=10)
+    assert [s.id for s in out] == ["Y"]
+
+
 def test_haversine_zero_and_known():
     assert core.haversine_km(41.9, 12.5, 41.9, 12.5) == pytest.approx(0.0, abs=1e-9)
     # Rome -> Milano is roughly 477 km

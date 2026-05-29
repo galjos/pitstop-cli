@@ -178,6 +178,7 @@ def _print_stations_json(ds: core.Dataset, stations: list[core.Station], query: 
 
 
 def _print_stations_table(stations: list[core.Station], use_near: bool) -> int:
+    any_suspect = False
     rows = []
     for st in stations:
         prices = st.prices or [None]
@@ -186,7 +187,10 @@ def _print_stations_table(stations: list[core.Station], use_near: bool) -> int:
             fuel = "" if p is None else p.fuel
             price = "" if p is None else f"{p.price:.3f}"
             updated = "" if p is None else (p.updated[:10])
-            base = [st.brand, st.comune, st.provincia, fuel, price, mode, updated, st.name]
+            name = st.name + (" *" if st.coordinate_suspect else "")
+            if st.coordinate_suspect:
+                any_suspect = True
+            base = [st.brand, st.comune, st.provincia, fuel, price, mode, updated, name]
             if use_near:
                 base = [f"{st.distance_km:.2f}"] + base
             rows.append(base)
@@ -196,6 +200,8 @@ def _print_stations_table(stations: list[core.Station], use_near: bool) -> int:
     widths = [max(len(r[i]) for r in rows) for i in range(len(headers))]
     for r in rows:
         print("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(r)))
+    if any_suspect:
+        print("\n* coordinate_suspect: registry coordinate is >30 km from the comune's other stations.")
     return 0
 
 

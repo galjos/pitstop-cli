@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pitstop"
+version = "0.0.1"
+description = "Unofficial JSON-first CLI for Italian fuel-station prices (MIMIT Osservaprezzi Carburanti open data)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+authors = [{ name = "Josef M. Gallmetzer" }]
+keywords = ["fuel", "prices", "italy", "mimit", "carburanti", "cli", "agent"]
+
+[project.scripts]
+pitstop = "pitstop.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pitstop"]

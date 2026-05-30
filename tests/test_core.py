@@ -172,6 +172,39 @@ def test_comune_centroids_and_suspect_flag():
     assert flagged == {"1": False, "2": False, "3": False, "4": True}
 
 
+def test_query_stations_uses_true_comune_coord_to_flag_single_station_comune():
+    # Single-station comune: centroid heuristic can't help; only the true
+    # comune coord (from the second source) can flag it.
+    bad = core.Station("X", "", "", "", "Rasen", "", "RASUN-ANTERSELVA", "BZ",
+                       46.4545, 11.3188,  # registry-stored (wrong)
+                       [core.Price("Gasolio", 2.115, True, "2026-05-27T00:00:00")])
+    ds = core.Dataset(stations={"X": bad}, registry_date="2026-05-28", price_date="2026-05-28")
+    coords = {"RASUN-ANTERSELVA": (46.839, 12.112)}  # true coord
+    out = core.query_stations(ds, comune_coords=coords)
+    assert out[0].coordinate_suspect is True
+    # Without comune validation, single-station comune isn't flagged.
+    bad.coordinate_suspect = False
+    out2 = core.query_stations(ds, validate_comune=False, comune_coords={})
+    assert out2[0].coordinate_suspect is False
+
+
+def test_query_stations_near_rejects_far_comune():
+    # The Rasen case: stored coord lands ~5km from Bolzano so it passes the
+    # radius check, but the declared comune's true location is ~50km away ->
+    # excluded by the comune sanity check.
+    rasen = core.Station("R", "", "", "", "Rasen", "", "RASUN-ANTERSELVA", "BZ",
+                         46.4545, 11.3188,
+                         [core.Price("Gasolio", 1.749, True, "2026-05-27T00:00:00")])
+    bolzano = core.Station("B", "", "", "", "BZ Station", "", "BOLZANO", "BZ",
+                           46.498, 11.354,
+                           [core.Price("Gasolio", 2.0, True, "2026-05-27T00:00:00")])
+    ds = core.Dataset(stations={"R": rasen, "B": bolzano},
+                      registry_date="2026-05-28", price_date="2026-05-28")
+    coords = {"RASUN-ANTERSELVA": (46.839, 12.112), "BOLZANO": (46.498, 11.354)}
+    out = core.query_stations(ds, near=(46.498, 11.354), radius_km=6, comune_coords=coords)
+    assert [s.id for s in out] == ["B"]
+
+
 def test_query_stations_skips_invalid_coords_for_near():
     bad = core.Station("X", "", "", "", "S", "", "NOWHERE", "ZZ", 0.0, 0.0,
                        [core.Price("Benzina", 2.0, True, "2026-05-27T00:00:00")])

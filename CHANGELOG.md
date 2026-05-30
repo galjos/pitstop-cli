@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-05-30
+
+### Added
+- **Second data source: Italian comune coordinates.** New `geocoding.py` module
+  fetches and caches an ISTAT-derived comune→(lat, lon) reference
+  (opendatasicilia/comuni-italiani) with 30-day cache and graceful fallback if
+  the upstream is unreachable. Achieves 97.5% comune-name match against MIMIT.
+- Comune validation in `query_stations`:
+  - flags `coordinate_suspect` when a station's stored coord is more than 30 km
+    from its declared comune's **true** location — this catches single-station
+    comuni (the original Rasen case) that the self-contained centroid method
+    provably could not.
+  - in `--near`, also excludes stations whose declared comune is outside
+    `radius_km + 30 km` of the query point; "Agip Tankstelle Rasen" no longer
+    appears in `--near 46.498,11.354 --radius 6`.
+- `--no-comune-validate` flag to skip the second source (offline/perf).
+
+### Known limitations
+- 2.5% of MIMIT comune strings don't match the reference (mostly garbage in the
+  comune field, recent comune mergers, minor spelling). The self-contained
+  centroid heuristic still applies to those.
+- The upstream comune dataset has no explicit LICENSE in its repo, though the
+  underlying data is ISTAT-derived. `pitstop` runtime-fetches only and credits
+  the source — if pitstop ever goes public, prefer a Wikidata-bundled file.
+
 ## [0.3.0] - 2026-05-29
 
 ### Added
@@ -87,6 +112,7 @@ Initial release.
 - `--fuel` is a substring match, so `Gasolio` also matches variants such as
   `Gasolio Alpino`.
 
+[0.4.0]: https://github.com/galjos/pitstop/releases/tag/v0.4.0
 [0.3.0]: https://github.com/galjos/pitstop/releases/tag/v0.3.0
 [0.2.0]: https://github.com/galjos/pitstop/releases/tag/v0.2.0
 [0.1.1]: https://github.com/galjos/pitstop/releases/tag/v0.1.1

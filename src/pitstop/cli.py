@@ -63,6 +63,8 @@ def _build_parser() -> argparse.ArgumentParser:
                           help="drop prices below this floor (e.g. 1.2 to skip placeholder values); 0 = off")
     stations.add_argument("--fresh-within-days", dest="fresh_days", type=int, default=0,
                           help="drop prices last updated more than N days ago; 0 = off")
+    stations.add_argument("--no-comune-validate", dest="validate_comune", action="store_false",
+                          help="skip validating coordinates against the comune-coords reference")
     stations.add_argument("--limit", type=int, default=20, help="max stations; 0 = no limit")
     stations.set_defaults(func=_cmd_stations)
 
@@ -121,6 +123,7 @@ def _cmd_stations(args) -> int:
         cheapest=args.cheapest,
         min_price=args.min_price,
         max_age_days=args.fresh_days,
+        validate_comune=args.validate_comune,
         limit=args.limit,
     )
 

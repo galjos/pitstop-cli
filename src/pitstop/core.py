@@ -284,11 +284,19 @@ def query_stations(
     min_price: float = 0.0,
     max_age_days: int = 0,
     limit: int = 20,
+    validate_comune: bool = True,
+    comune_coords: dict[str, tuple[float, float]] | None = None,
 ) -> list[Station]:
     """Filter, sort, and limit stations. Mutates the dataset's Station objects
     (narrows prices, sets distance_km), so pass a freshly loaded Dataset."""
     today = date.today() if max_age_days > 0 else None
     centroids = comune_centroids(ds)
+    if validate_comune and comune_coords is None:
+        from . import geocoding
+        comune_coords = geocoding.load_comune_coords()
+    elif comune_coords is None:
+        comune_coords = {}
+
     out: list[Station] = []
     for st in ds.stations.values():
         if comune and st.comune.casefold() != comune.strip().casefold():
@@ -305,11 +313,15 @@ def query_stations(
             continue
         st.prices = prices
 
-        # Flag coordinates that are implausible or far from the station's
-        # comune-cluster. Single-station comuni cannot be validated this way
-        # and remain unflagged — a known limitation requiring a second source.
+        # Flag coordinates that are implausible or far from where they should be.
+        # Prefer the true ISTAT-derived comune coord when available (works for
+        # single-station comuni); fall back to the in-data comune centroid.
+        true_coord = comune_coords.get(st.comune.upper()) if comune_coords else None
         if not in_italy(st.lat, st.lon):
             st.coordinate_suspect = True
+        elif true_coord is not None:
+            if haversine_km(true_coord[0], true_coord[1], st.lat, st.lon) > SUSPECT_DISTANCE_KM:
+                st.coordinate_suspect = True
         else:
             c = centroids.get(st.comune.upper())
             if c is not None and haversine_km(c[0], c[1], st.lat, st.lon) > SUSPECT_DISTANCE_KM:
@@ -318,6 +330,13 @@ def query_stations(
         if near is not None:
             if not in_italy(st.lat, st.lon):
                 continue  # invalid coords cannot be reliably near anything
+            # Reject stations whose declared comune is geographically too far
+            # from the query point — even if the stored coordinate happens to
+            # land close (the Rasen case). Tolerance pads for large comuni.
+            if true_coord is not None:
+                comune_dist = haversine_km(near[0], near[1], true_coord[0], true_coord[1])
+                if comune_dist > radius_km + 30.0:
+                    continue
             d = haversine_km(near[0], near[1], st.lat, st.lon)
             if d > radius_km:
                 continue

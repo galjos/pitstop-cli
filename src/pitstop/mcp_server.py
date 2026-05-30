@@ -34,9 +34,10 @@ _FIND_CHEAPEST_DESC = (
     "Find the cheapest Italian stations for a given fuel, near a coordinate "
     '("lat,lon") or in a comune. By default applies a fuel-aware price floor '
     "(skips placeholder values for petrol/diesel, no floor for cheap fuels like "
-    "GPL) and ignores prices not updated in the last 90 days (stale records); "
-    "pass min_price >= 0 or max_age_days >= 0 to override. Returns a "
-    "provenance-carrying JSON envelope sorted cheapest-first." + _CAVEATS
+    "GPL), ignores prices not updated in the last 90 days, and drops statistical "
+    "outliers (>15% below median OR below the Tukey lower fence). Override via "
+    "min_price, max_age_days, drop_outliers. Returns a provenance-carrying JSON "
+    "envelope sorted cheapest-first." + _CAVEATS
 )
 
 
@@ -78,6 +79,7 @@ def find_stations(
     min_price: float = 0.0,
     max_age_days: int = 0,
     max_deviation_pct: float = 0.0,
+    drop_outliers: bool = False,
     limit: int = 20,
 ) -> dict:
     ds = core.load()
@@ -95,6 +97,7 @@ def find_stations(
         min_price=min_price,
         max_age_days=max_age_days,
         max_deviation_pct=max_deviation_pct,
+        drop_outliers=drop_outliers,
         limit=limit,
     )
     query = {
@@ -127,6 +130,7 @@ def find_cheapest(
     min_price: float = -1.0,
     max_age_days: int = -1,
     max_deviation_pct: float = 0.0,
+    drop_outliers: bool = True,
     limit: int = 5,
 ) -> dict:
     if min_price < 0:
@@ -145,6 +149,7 @@ def find_cheapest(
         min_price=min_price,
         max_age_days=max_age_days,
         max_deviation_pct=max_deviation_pct,
+        drop_outliers=drop_outliers,
         limit=limit,
     )
     query: dict = {
@@ -152,6 +157,7 @@ def find_cheapest(
         "cheapest": True,
         "min_price": min_price,
         "fresh_within_days": max_age_days,
+        "drop_outliers": drop_outliers,
     }
     if comune:
         query["comune"] = comune

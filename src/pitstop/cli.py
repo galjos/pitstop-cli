@@ -65,6 +65,8 @@ def _build_parser() -> argparse.ArgumentParser:
                           help="drop prices last updated more than N days ago; 0 = off")
     stations.add_argument("--max-deviation-pct", dest="max_dev_pct", type=float, default=0.0,
                           help="drop prices more than N%% below their (fuel, provincia) median; 0 = off")
+    stations.add_argument("--drop-outliers", dest="drop_outliers", action="store_true",
+                          help="drop any price flagged outlier (combined 15%% + Tukey IQR rule)")
     stations.add_argument("--no-comune-validate", dest="validate_comune", action="store_false",
                           help="skip validating coordinates against the comune-coords reference")
     stations.add_argument("--limit", type=int, default=20, help="max stations; 0 = no limit")
@@ -126,6 +128,7 @@ def _cmd_stations(args) -> int:
         min_price=args.min_price,
         max_age_days=args.fresh_days,
         max_deviation_pct=args.max_dev_pct,
+        drop_outliers=args.drop_outliers,
         validate_comune=args.validate_comune,
         limit=args.limit,
     )
@@ -150,6 +153,8 @@ def _cmd_stations(args) -> int:
         query["fresh_within_days"] = args.fresh_days
     if args.max_dev_pct > 0:
         query["max_deviation_pct"] = args.max_dev_pct
+    if args.drop_outliers:
+        query["drop_outliers"] = True
 
     if args.as_json:
         return _print_stations_json(ds, out, query)

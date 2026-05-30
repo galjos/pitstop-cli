@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-05-30
+
+### Added
+- **Tukey IQR outlier rule** combined with the existing 15% deviation rule —
+  catches borderline misreports in tight markets that the percentage rule
+  alone misses. A price is now flagged `outlier` if it is more than 15% below
+  the (fuel, provincia) median **or** below the Tukey lower fence
+  (Q1 − 1.5·IQR).
+- `--drop-outliers` CLI flag and `drop_outliers` MCP parameter that filters
+  any price flagged outlier. MCP `find_cheapest` defaults `drop_outliers=True`
+  for clean cheapest answers.
+
+### Why
+A user cross-checked v0.5.0's €1.787 "cheapest BZ Gasolio" (g.p. oil) against
+[spritpreise.it](https://www.spritpreise.it/), a local South-Tyrol fuel
+service. That station/price does not appear there and spritpreise's cheapest
+is €1.989. Empirically only 1 of 250 BZ Gasolio prices in MIMIT falls below
+€1.989 — the g.p. oil misreport. Its deviation is −14.9%, just under the 15%
+percent rule. The Tukey fence (€1.949 for BZ Gasolio, IQR €0.080) catches it.
+
 ## [0.5.0] - 2026-05-30
 
 ### Added
@@ -130,6 +150,7 @@ Initial release.
 - `--fuel` is a substring match, so `Gasolio` also matches variants such as
   `Gasolio Alpino`.
 
+[0.6.0]: https://github.com/galjos/pitstop/releases/tag/v0.6.0
 [0.5.0]: https://github.com/galjos/pitstop/releases/tag/v0.5.0
 [0.4.0]: https://github.com/galjos/pitstop/releases/tag/v0.4.0
 [0.3.0]: https://github.com/galjos/pitstop/releases/tag/v0.3.0

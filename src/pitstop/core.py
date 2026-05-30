@@ -293,6 +293,7 @@ def query_stations(
     min_price: float = 0.0,
     max_age_days: int = 0,
     max_deviation_pct: float = 0.0,
+    drop_outliers: bool = False,
     limit: int = 20,
     validate_comune: bool = True,
     comune_coords: dict[str, tuple[float, float]] | None = None,
@@ -301,7 +302,7 @@ def query_stations(
     (narrows prices, sets distance_km), so pass a freshly loaded Dataset."""
     today = date.today() if max_age_days > 0 else None
     centroids = comune_centroids(ds)
-    medians = fuel_provincia_medians(ds)
+    stats = fuel_provincia_stats(ds)
     if validate_comune and comune_coords is None:
         from . import geocoding
         comune_coords = geocoding.load_comune_coords()
@@ -321,20 +322,27 @@ def query_stations(
             st.prices, fuel, self_only, served_only, min_price, max_age_days, today
         )
         # Annotate each surviving price with its (fuel, provincia) market context,
-        # then optionally drop prices that fall too far below the local median.
+        # then optionally drop prices that fall too far below the local market.
+        # outlier flag fires if the price is below EITHER the percentage threshold
+        # OR the Tukey lower fence (Q1 - 1.5*IQR) — combining catches both
+        # gross misreports in diverse markets and subtle ones in tight markets.
         prov = st.provincia.strip().upper()
         kept_prices: list[Price] = []
         for p in prices:
-            med = medians.get((p.fuel.strip().lower(), prov))
-            if med is not None:
+            s = stats.get((p.fuel.strip().lower(), prov))
+            if s is not None:
+                med = s["median"]
                 p.regional_median = round(med, 3)
                 p.deviation_pct = round((p.price - med) / med * 100, 1)
-                p.outlier = p.deviation_pct < -OUTLIER_DEVIATION_PCT
-            if max_deviation_pct > 0 and med is not None and p.deviation_pct < -max_deviation_pct:
+                p.outlier = (p.deviation_pct < -OUTLIER_DEVIATION_PCT
+                             or p.price < s["lower_fence"])
+            if max_deviation_pct > 0 and s is not None and p.deviation_pct < -max_deviation_pct:
+                continue
+            if drop_outliers and p.outlier:
                 continue
             kept_prices.append(p)
         active_filter = (fuel or self_only or served_only or min_price > 0
-                         or max_age_days > 0 or max_deviation_pct > 0)
+                         or max_age_days > 0 or max_deviation_pct > 0 or drop_outliers)
         if active_filter and not kept_prices:
             continue
         st.prices = kept_prices
@@ -402,10 +410,13 @@ OUTLIER_DEVIATION_PCT = 15.0  # a price more than this far below its (fuel, prov
 MIN_SAMPLES_FOR_MEDIAN = 15
 
 
-def fuel_provincia_medians(ds: "Dataset", min_n: int = MIN_SAMPLES_FOR_MEDIAN) -> dict[tuple[str, str], float]:
-    """Per (fuel-lowercase, provincia-uppercase), the median price across all
-    stations. Only returned where at least `min_n` samples exist — small
-    provinces don't get a reliable benchmark."""
+def fuel_provincia_stats(ds: "Dataset", min_n: int = MIN_SAMPLES_FOR_MEDIAN) -> dict[tuple[str, str], dict]:
+    """Per (fuel-lowercase, provincia-uppercase) statistics for outlier detection:
+    median, Q1, Q3, IQR, and Tukey lower fence (Q1 - 1.5*IQR). Only returned
+    where at least `min_n` samples exist. The Tukey fence catches misreports
+    in tight markets that a fixed-percentage threshold misses (e.g. a 1.787
+    diesel in BZ where the median is 2.099 — only -14.9% but well below the
+    1.949 fence)."""
     bucket: dict[tuple[str, str], list[float]] = {}
     for st in ds.stations.values():
         prov = st.provincia.strip().upper()
@@ -416,7 +427,23 @@ def fuel_provincia_medians(ds: "Dataset", min_n: int = MIN_SAMPLES_FOR_MEDIAN) -
             if not fuel:
                 continue
             bucket.setdefault((fuel, prov), []).append(p.price)
-    return {k: statistics.median(v) for k, v in bucket.items() if len(v) >= min_n}
+    out: dict[tuple[str, str], dict] = {}
+    for key, prices in bucket.items():
+        if len(prices) < min_n:
+            continue
+        q1, _, q3 = statistics.quantiles(prices, n=4)
+        iqr = q3 - q1
+        out[key] = {
+            "median": statistics.median(prices),
+            "q1": q1, "q3": q3, "iqr": iqr,
+            "lower_fence": q1 - 1.5 * iqr,
+        }
+    return out
+
+
+# Back-compat: original median-only helper kept as a thin wrapper.
+def fuel_provincia_medians(ds: "Dataset", min_n: int = MIN_SAMPLES_FOR_MEDIAN) -> dict[tuple[str, str], float]:
+    return {k: v["median"] for k, v in fuel_provincia_stats(ds, min_n).items()}
 
 
 def in_italy(lat: float, lon: float) -> bool:

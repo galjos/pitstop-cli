@@ -33,7 +33,7 @@ pitstop fuels --json
 
 Key flags: `--comune`, `--provincia` (2-letter, e.g. `BZ`), `--brand`, `--near "lat,lon"` + `--radius` (km), `--fuel` (substring, case-insensitive), `--self` / `--served`, `--cheapest`, `--min-price` (price floor), `--fresh-within-days` (drop stale prices), `--max-deviation-pct` (drop prices >N% below their provincial median), `--limit`, `--json`. The MCP `find_cheapest` tool applies a fuel-aware floor and a 90-day freshness window by default.
 
-Every price comes back with `regional_median`, `deviation_pct`, and an `outlier` flag (true when >15% below the local median) — use the flag to caveat or report suspicious prices to the user instead of silently trusting them.
+Every price comes back with `regional_median`, `deviation_pct`, and an `outlier` flag (true when >15% below the local median **or** below the Tukey lower fence). MCP `find_cheapest` already filters outliers by default (`drop_outliers=True`); for `find_stations` consider passing `drop_outliers=True` when ranking by price, or use the `outlier` field to caveat in your answer.
 
 If your client speaks MCP instead of shelling out, the same capabilities are available as MCP tools (`list_fuels`, `find_stations`, `find_cheapest`) via `pitstop-mcp` (install `pitstop[mcp]`).
 

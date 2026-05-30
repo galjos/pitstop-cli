@@ -194,6 +194,30 @@ def test_fuel_provincia_medians_and_outlier_flag():
     assert normal.prices[0].regional_median is not None
 
 
+def test_tukey_fence_catches_borderline_outliers():
+    # Build a tight market: 15 prices around 2.10 + one at 1.787 (~-14.9%, just
+    # under the 15% rule, but well below the Tukey lower fence). The combined
+    # outlier flag must catch it. Mirrors the real BZ Gasolio g.p. oil case.
+    def st(sid, price):
+        return core.Station(sid, "", "", "", f"S{sid}", "", "BOLZANO", "BZ", 46.5, 11.35,
+                            [core.Price("Gasolio", price, True, "2026-05-27T00:00:00")])
+    tight = [2.099, 2.099, 2.099, 2.099, 2.099, 2.069, 2.069, 2.069,
+             2.129, 2.129, 2.129, 2.149, 2.149, 2.059, 2.069]
+    stations = {str(i): st(str(i), p) for i, p in enumerate(tight)}
+    stations["X"] = st("X", 1.787)
+    ds = core.Dataset(stations=stations, registry_date="2026-05-28", price_date="2026-05-28")
+
+    out = core.query_stations(ds, validate_comune=False, limit=0)
+    outlier = next(s for s in out if s.id == "X")
+    assert -15.0 < outlier.prices[0].deviation_pct < -14.5, "should be within the percent rule"
+    assert outlier.prices[0].outlier is True, "Tukey fence should still flag it"
+
+    # drop_outliers removes it
+    out_dropped = core.query_stations(ds, fuel="Gasolio", drop_outliers=True,
+                                       validate_comune=False, limit=0)
+    assert "X" not in {s.id for s in out_dropped}
+
+
 def test_max_deviation_pct_filters_outliers():
     def st(sid, price):
         return core.Station(sid, "", "", "", f"S{sid}", "", "ROMA", "RM", 41.9, 12.5,

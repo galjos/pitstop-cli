@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pitstop"
-version = "0.5.0"
+version = "0.6.0"
 description = "Unofficial JSON-first CLI for Italian fuel-station prices (MIMIT Osservaprezzi Carburanti open data)."
 readme = "README.md"
 requires-python = ">=3.10"

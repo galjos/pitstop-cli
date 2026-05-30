@@ -53,7 +53,9 @@ pitstop stations --near 46.498,11.354 --radius 5 --fuel Benzina --self --json
 pitstop fuels
 ```
 
-`stations` flags: `--comune`, `--provincia`, `--brand`, `--near "lat,lon"`, `--radius`, `--fuel` (substring, case-insensitive), `--self`, `--served`, `--cheapest` (needs `--fuel`), `--min-price` (drop values below a floor; e.g. `1.2` to skip placeholders), `--fresh-within-days` (drop prices last updated more than N days ago), `--limit`, `--json`. Loading flags (`--refresh`, `--max-age`, `--timeout`) apply to any data command.
+`stations` flags: `--comune`, `--provincia`, `--brand`, `--near "lat,lon"`, `--radius`, `--fuel` (substring, case-insensitive), `--self`, `--served`, `--cheapest` (needs `--fuel`), `--min-price` (drop values below a floor; e.g. `1.2` to skip placeholders), `--fresh-within-days` (drop stale prices), `--max-deviation-pct` (drop prices more than N% below their fuel's provincial median — catches misreports), `--no-comune-validate`, `--limit`, `--json`. Loading flags (`--refresh`, `--max-age`, `--timeout`) apply to any data command.
+
+Every returned price carries `regional_median`, `deviation_pct`, and an `outlier` flag (true when >15% below the local median) so consumers can caveat suspicious prices without filtering them.
 
 ## MCP server
 

@@ -172,6 +172,41 @@ def test_comune_centroids_and_suspect_flag():
     assert flagged == {"1": False, "2": False, "3": False, "4": True}
 
 
+def test_fuel_provincia_medians_and_outlier_flag():
+    # Build a synthetic dataset: 15 ROMA stations with diesel ~2.00 + one outlier at 1.50.
+    def st(sid, price):
+        return core.Station(sid, "", "", "", f"S{sid}", "", "ROMA", "RM", 41.9, 12.5,
+                            [core.Price("Gasolio", price, True, "2026-05-27T00:00:00")])
+    stations = {str(i): st(str(i), 2.00 + (i - 7) * 0.005) for i in range(15)}
+    stations["X"] = st("X", 1.50)
+    ds = core.Dataset(stations=stations, registry_date="2026-05-28", price_date="2026-05-28")
+
+    meds = core.fuel_provincia_medians(ds, min_n=10)
+    assert ("gasolio", "RM") in meds
+    assert 1.99 < meds[("gasolio", "RM")] < 2.01
+
+    out = core.query_stations(ds, validate_comune=False, limit=0)
+    outlier = next(s for s in out if s.id == "X")
+    normal = next(s for s in out if s.id == "7")
+    assert outlier.prices[0].outlier is True
+    assert outlier.prices[0].deviation_pct < -20
+    assert normal.prices[0].outlier is False
+    assert normal.prices[0].regional_median is not None
+
+
+def test_max_deviation_pct_filters_outliers():
+    def st(sid, price):
+        return core.Station(sid, "", "", "", f"S{sid}", "", "ROMA", "RM", 41.9, 12.5,
+                            [core.Price("Gasolio", price, True, "2026-05-27T00:00:00")])
+    stations = {str(i): st(str(i), 2.00) for i in range(15)}
+    stations["X"] = st("X", 1.50)
+    ds = core.Dataset(stations=stations, registry_date="2026-05-28", price_date="2026-05-28")
+
+    out = core.query_stations(ds, fuel="Gasolio", max_deviation_pct=20,
+                              validate_comune=False, limit=0)
+    assert "X" not in {s.id for s in out}
+
+
 def test_query_stations_uses_true_comune_coord_to_flag_single_station_comune():
     # Single-station comune: centroid heuristic can't help; only the true
     # comune coord (from the second source) can flag it.

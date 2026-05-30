@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-30
+
+### Added
+- **Price-outlier detection.** Every price is annotated with `regional_median`
+  and `deviation_pct` against the median for its (fuel, provincia) — computed
+  from the dataset itself, no extra source. Prices more than 15% below their
+  regional median get an `outlier: true` flag. The CLI table marks outliers
+  with `?` and prints a footnote.
+- `--max-deviation-pct N` on `pitstop stations` (and `max_deviation_pct` on the
+  MCP tools) to drop prices that fall too far below the local market — opt-in,
+  off by default to preserve fidelity.
+
+### Why
+Empirically, Q8 Verona at €1.638 (vs €2.06 VR-Gasolio median, −20.4%) and
+ENI Rome at €1.639 (vs €2.07 RM-Gasolio median, −20.8%) are statistical
+outliers — likely misreports. The signal cleanly separates them from real
+discount stations (whose prices are typically ~5–7% below median).
+
 ## [0.4.0] - 2026-05-30
 
 ### Added
@@ -112,6 +130,7 @@ Initial release.
 - `--fuel` is a substring match, so `Gasolio` also matches variants such as
   `Gasolio Alpino`.
 
+[0.5.0]: https://github.com/galjos/pitstop/releases/tag/v0.5.0
 [0.4.0]: https://github.com/galjos/pitstop/releases/tag/v0.4.0
 [0.3.0]: https://github.com/galjos/pitstop/releases/tag/v0.3.0
 [0.2.0]: https://github.com/galjos/pitstop/releases/tag/v0.2.0

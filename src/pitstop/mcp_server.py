@@ -15,7 +15,10 @@ _CAVEATS = (
     " Data is daily (not real-time): prices are as of ~08:00 the day before "
     "price_extraction_date. Italy only. `fuel` is a substring match, so 'Gasolio' "
     "also matches variants like 'Gasolio Alpino'. Some operators report placeholder "
-    "prices (e.g. 1.000); set min_price (e.g. 1.2) to skip them when ranking."
+    "prices (e.g. 1.000); set min_price (e.g. 1.2) to skip them when ranking. Each "
+    "price carries regional_median, deviation_pct, and an `outlier` flag (true when "
+    ">15% below the fuel's median in that provincia) — use the flag to caveat or "
+    "set max_deviation_pct to silently drop suspect prices."
 )
 
 _FIND_STATIONS_DESC = (
@@ -74,6 +77,7 @@ def find_stations(
     cheapest: bool = False,
     min_price: float = 0.0,
     max_age_days: int = 0,
+    max_deviation_pct: float = 0.0,
     limit: int = 20,
 ) -> dict:
     ds = core.load()
@@ -90,6 +94,7 @@ def find_stations(
         cheapest=cheapest,
         min_price=min_price,
         max_age_days=max_age_days,
+        max_deviation_pct=max_deviation_pct,
         limit=limit,
     )
     query = {
@@ -121,6 +126,7 @@ def find_cheapest(
     self_only: bool = False,
     min_price: float = -1.0,
     max_age_days: int = -1,
+    max_deviation_pct: float = 0.0,
     limit: int = 5,
 ) -> dict:
     if min_price < 0:
@@ -138,6 +144,7 @@ def find_cheapest(
         cheapest=True,
         min_price=min_price,
         max_age_days=max_age_days,
+        max_deviation_pct=max_deviation_pct,
         limit=limit,
     )
     query: dict = {

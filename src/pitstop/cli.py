@@ -63,6 +63,8 @@ def _build_parser() -> argparse.ArgumentParser:
                           help="drop prices below this floor (e.g. 1.2 to skip placeholder values); 0 = off")
     stations.add_argument("--fresh-within-days", dest="fresh_days", type=int, default=0,
                           help="drop prices last updated more than N days ago; 0 = off")
+    stations.add_argument("--max-deviation-pct", dest="max_dev_pct", type=float, default=0.0,
+                          help="drop prices more than N%% below their (fuel, provincia) median; 0 = off")
     stations.add_argument("--no-comune-validate", dest="validate_comune", action="store_false",
                           help="skip validating coordinates against the comune-coords reference")
     stations.add_argument("--limit", type=int, default=20, help="max stations; 0 = no limit")
@@ -123,6 +125,7 @@ def _cmd_stations(args) -> int:
         cheapest=args.cheapest,
         min_price=args.min_price,
         max_age_days=args.fresh_days,
+        max_deviation_pct=args.max_dev_pct,
         validate_comune=args.validate_comune,
         limit=args.limit,
     )
@@ -145,6 +148,8 @@ def _cmd_stations(args) -> int:
         query["min_price"] = args.min_price
     if args.fresh_days > 0:
         query["fresh_within_days"] = args.fresh_days
+    if args.max_dev_pct > 0:
+        query["max_deviation_pct"] = args.max_dev_pct
 
     if args.as_json:
         return _print_stations_json(ds, out, query)
@@ -182,13 +187,20 @@ def _print_stations_json(ds: core.Dataset, stations: list[core.Station], query: 
 
 def _print_stations_table(stations: list[core.Station], use_near: bool) -> int:
     any_suspect = False
+    any_outlier = False
     rows = []
     for st in stations:
         prices = st.prices or [None]
         for p in prices:
             mode = "" if p is None else ("self" if p.self_service else "served")
             fuel = "" if p is None else p.fuel
-            price = "" if p is None else f"{p.price:.3f}"
+            if p is None:
+                price = ""
+            else:
+                outlier_mark = " ?" if p.outlier else ""
+                price = f"{p.price:.3f}{outlier_mark}"
+                if p.outlier:
+                    any_outlier = True
             updated = "" if p is None else (p.updated[:10])
             name = st.name + (" *" if st.coordinate_suspect else "")
             if st.coordinate_suspect:
@@ -203,8 +215,10 @@ def _print_stations_table(stations: list[core.Station], use_near: bool) -> int:
     widths = [max(len(r[i]) for r in rows) for i in range(len(headers))]
     for r in rows:
         print("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(r)))
+    if any_outlier:
+        print("\n? price >15% below its (fuel, provincia) median — may be a misreport.")
     if any_suspect:
-        print("\n* coordinate_suspect: registry coordinate is >30 km from the comune's other stations.")
+        print("* coordinate_suspect: registry coordinate is far from the comune's other stations.")
     return 0
 
 

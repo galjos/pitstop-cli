@@ -31,7 +31,9 @@ pitstop stations --near 46.498,11.354 --radius 5 --fuel Benzina --self --json
 pitstop fuels --json
 ```
 
-Key flags: `--comune`, `--provincia` (2-letter, e.g. `BZ`), `--brand`, `--near "lat,lon"` + `--radius` (km), `--fuel` (substring, case-insensitive), `--self` / `--served`, `--cheapest`, `--min-price` (price floor), `--fresh-within-days` (drop stale prices), `--limit`, `--json`. The MCP `find_cheapest` tool applies a fuel-aware floor and a 90-day freshness window by default.
+Key flags: `--comune`, `--provincia` (2-letter, e.g. `BZ`), `--brand`, `--near "lat,lon"` + `--radius` (km), `--fuel` (substring, case-insensitive), `--self` / `--served`, `--cheapest`, `--min-price` (price floor), `--fresh-within-days` (drop stale prices), `--max-deviation-pct` (drop prices >N% below their provincial median), `--limit`, `--json`. The MCP `find_cheapest` tool applies a fuel-aware floor and a 90-day freshness window by default.
+
+Every price comes back with `regional_median`, `deviation_pct`, and an `outlier` flag (true when >15% below the local median) — use the flag to caveat or report suspicious prices to the user instead of silently trusting them.
 
 If your client speaks MCP instead of shelling out, the same capabilities are available as MCP tools (`list_fuels`, `find_stations`, `find_cheapest`) via `pitstop-mcp` (install `pitstop[mcp]`).
 

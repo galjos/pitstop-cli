@@ -39,14 +39,23 @@ class Price:
     price: float
     self_service: bool
     updated: str
+    regional_median: float | None = None
+    deviation_pct: float | None = None
+    outlier: bool = False
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "fuel": self.fuel,
             "price": self.price,
             "self_service": self.self_service,
             "updated": self.updated,
         }
+        if self.regional_median is not None:
+            d["regional_median"] = self.regional_median
+            d["deviation_pct"] = self.deviation_pct
+        if self.outlier:
+            d["outlier"] = True
+        return d
 
 
 @dataclass
@@ -283,6 +292,7 @@ def query_stations(
     cheapest: bool = False,
     min_price: float = 0.0,
     max_age_days: int = 0,
+    max_deviation_pct: float = 0.0,
     limit: int = 20,
     validate_comune: bool = True,
     comune_coords: dict[str, tuple[float, float]] | None = None,
@@ -291,6 +301,7 @@ def query_stations(
     (narrows prices, sets distance_km), so pass a freshly loaded Dataset."""
     today = date.today() if max_age_days > 0 else None
     centroids = comune_centroids(ds)
+    medians = fuel_provincia_medians(ds)
     if validate_comune and comune_coords is None:
         from . import geocoding
         comune_coords = geocoding.load_comune_coords()
@@ -309,9 +320,24 @@ def query_stations(
         prices = filter_prices(
             st.prices, fuel, self_only, served_only, min_price, max_age_days, today
         )
-        if (fuel or self_only or served_only or min_price > 0 or max_age_days > 0) and not prices:
+        # Annotate each surviving price with its (fuel, provincia) market context,
+        # then optionally drop prices that fall too far below the local median.
+        prov = st.provincia.strip().upper()
+        kept_prices: list[Price] = []
+        for p in prices:
+            med = medians.get((p.fuel.strip().lower(), prov))
+            if med is not None:
+                p.regional_median = round(med, 3)
+                p.deviation_pct = round((p.price - med) / med * 100, 1)
+                p.outlier = p.deviation_pct < -OUTLIER_DEVIATION_PCT
+            if max_deviation_pct > 0 and med is not None and p.deviation_pct < -max_deviation_pct:
+                continue
+            kept_prices.append(p)
+        active_filter = (fuel or self_only or served_only or min_price > 0
+                         or max_age_days > 0 or max_deviation_pct > 0)
+        if active_filter and not kept_prices:
             continue
-        st.prices = prices
+        st.prices = kept_prices
 
         # Flag coordinates that are implausible or far from where they should be.
         # Prefer the true ISTAT-derived comune coord when available (works for
@@ -372,6 +398,25 @@ def response_envelope(ds: Dataset, stations: list[Station], query: dict) -> dict
 
 ITALY_BBOX = (35.0, 47.6, 6.0, 19.0)  # min_lat, max_lat, min_lon, max_lon
 SUSPECT_DISTANCE_KM = 30.0
+OUTLIER_DEVIATION_PCT = 15.0  # a price more than this far below its (fuel, provincia) median is flagged
+MIN_SAMPLES_FOR_MEDIAN = 15
+
+
+def fuel_provincia_medians(ds: "Dataset", min_n: int = MIN_SAMPLES_FOR_MEDIAN) -> dict[tuple[str, str], float]:
+    """Per (fuel-lowercase, provincia-uppercase), the median price across all
+    stations. Only returned where at least `min_n` samples exist — small
+    provinces don't get a reliable benchmark."""
+    bucket: dict[tuple[str, str], list[float]] = {}
+    for st in ds.stations.values():
+        prov = st.provincia.strip().upper()
+        if not prov:
+            continue
+        for p in st.prices:
+            fuel = p.fuel.strip().lower()
+            if not fuel:
+                continue
+            bucket.setdefault((fuel, prov), []).append(p.price)
+    return {k: statistics.median(v) for k, v in bucket.items() if len(v) >= min_n}
 
 
 def in_italy(lat: float, lon: float) -> bool:

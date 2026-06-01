@@ -76,6 +76,25 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_load_args(fuels)
     fuels.set_defaults(func=_cmd_fuels)
 
+    chargers = sub.add_parser("chargers", help="find EV charging stations (OSM)")
+    chargers.add_argument("--near", default="", help='proximity to "lat,lon" (or use --comune)')
+    chargers.add_argument("--comune", default="", help="center the search on this Italian comune")
+    chargers.add_argument("--radius", type=float, default=10.0, help="radius in km (default 10)")
+    chargers.add_argument("--operator", default="", help="operator substring (case-insensitive)")
+    chargers.add_argument("--socket", default="", help="plug-type substring, e.g. ccs, chademo, type2")
+    chargers.add_argument("--min-power", dest="min_power_kw", type=float, default=0.0,
+                          help="minimum max-power kW")
+    chargers.add_argument("--fast", action="store_true", help="shortcut for --min-power 50")
+    chargers.add_argument("--ultra-fast", dest="ultra_fast", action="store_true",
+                          help="shortcut for --min-power 150")
+    chargers.add_argument("--free", action="store_true", help="only chargers explicitly free (fee=no)")
+    chargers.add_argument("--public", action="store_true", help="only public access")
+    chargers.add_argument("--limit", type=int, default=20, help="max stations; 0 = no limit")
+    chargers.add_argument("--json", dest="as_json", action="store_true")
+    chargers.add_argument("--refresh", action="store_true",
+                          help="bypass the 7-day OSM cache")
+    chargers.set_defaults(func=_cmd_chargers)
+
     version = sub.add_parser("version", help="print version metadata")
     version.set_defaults(func=lambda _a: (print(f"pitstop {__version__}") or 0))
 
@@ -159,6 +178,88 @@ def _cmd_stations(args) -> int:
     if args.as_json:
         return _print_stations_json(ds, out, query)
     return _print_stations_table(out, use_near)
+
+
+def _cmd_chargers(args) -> int:
+    from . import chargers, geocoding
+    if not args.near.strip() and not args.comune.strip():
+        print("error: pass --near \"lat,lon\" or --comune NAME", file=sys.stderr)
+        return 2
+
+    if args.near.strip():
+        try:
+            lat, lon = _parse_latlon(args.near)
+        except ValueError as e:
+            print(f"error: invalid --near value: {e}", file=sys.stderr)
+            return 2
+    else:
+        coords = geocoding.load_comune_coords()
+        true = coords.get(args.comune.strip().upper())
+        if not true:
+            print(f"error: comune '{args.comune}' not found in the comune-coords reference",
+                  file=sys.stderr)
+            return 1
+        lat, lon = true
+
+    min_kw = args.min_power_kw
+    if args.ultra_fast:
+        min_kw = max(min_kw, 150.0)
+    elif args.fast:
+        min_kw = max(min_kw, 50.0)
+
+    stations = chargers.find_chargers(
+        near=(lat, lon),
+        radius_km=args.radius,
+        operator=args.operator,
+        socket=args.socket,
+        min_power_kw=min_kw,
+        free_only=args.free,
+        public_only=args.public,
+        refresh=args.refresh,
+    )
+    if args.limit > 0:
+        stations = stations[: args.limit]
+
+    query = {"near": f"{lat},{lon}", "radius_km": args.radius}
+    if args.comune:
+        query["comune"] = args.comune
+    if args.operator:
+        query["operator"] = args.operator
+    if args.socket:
+        query["socket"] = args.socket
+    if min_kw > 0:
+        query["min_power_kw"] = min_kw
+    if args.free:
+        query["free"] = True
+    if args.public:
+        query["public"] = True
+
+    if args.as_json:
+        _dump(chargers.response_envelope(stations, query))
+        return 0
+    return _print_chargers_table(stations)
+
+
+def _print_chargers_table(stations) -> int:
+    headers = ["DIST_KM", "OPERATOR", "MAX_KW", "PLUGS", "CAP", "FEE", "ACCESS", "NAME"]
+    rows = [headers]
+    for st in stations:
+        plugs = ", ".join(f"{s.type}x{s.count}" for s in st.sockets[:3]) or "?"
+        fee = "" if st.fee is None else ("yes" if st.fee else "no")
+        rows.append([
+            f"{st.distance_km:.2f}" if st.distance_km is not None else "",
+            (st.operator or "?")[:24],
+            f"{st.max_power_kw:g}" if st.max_power_kw is not None else "?",
+            plugs[:36],
+            str(st.capacity) if st.capacity is not None else "",
+            fee,
+            (st.access or "")[:10],
+            (st.name or "")[:30],
+        ])
+    widths = [max(len(r[i]) for r in rows) for i in range(len(headers))]
+    for r in rows:
+        print("  ".join(c.ljust(widths[i]) for i, c in enumerate(r)))
+    return 0
 
 
 def _cmd_fuels(args) -> int:

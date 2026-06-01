@@ -7,7 +7,8 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from . import core
+from . import chargers as ev_chargers
+from . import core, geocoding
 
 mcp = FastMCP("pitstop")
 
@@ -167,6 +168,67 @@ def find_cheapest(
     if self_only:
         query["self"] = True
     return core.response_envelope(ds, stations, query)
+
+
+_FIND_CHARGERS_DESC = (
+    "Find EV charging stations near a coordinate or Italian comune, from "
+    "OpenStreetMap. Pass either `near` (\"lat,lon\") or `comune` (Italian "
+    "municipality name; resolved via the comune-coords reference). Filter by "
+    "operator substring, plug type (e.g. 'ccs', 'chademo', 'type2'), minimum "
+    "max-power kW, free-only, and public-access-only. Returns a JSON envelope "
+    "with operator, plug types, max kW, fee, access, and distance per station. "
+    "Note: power and plug fields reflect OSM mappers' input — verify with the "
+    "operator before relying. EV pricing isn't in this dataset; AFIR/DATEX II "
+    "is the future path for that."
+)
+
+
+@mcp.tool(description=_FIND_CHARGERS_DESC)
+def find_chargers(
+    near: str = "",
+    comune: str = "",
+    radius_km: float = 10.0,
+    operator: str = "",
+    socket: str = "",
+    min_power_kw: float = 0.0,
+    free_only: bool = False,
+    public_only: bool = False,
+    limit: int = 20,
+) -> dict:
+    if not near.strip() and not comune.strip():
+        return {"source": ev_chargers.overpass.SOURCE_NAME, "count": 0, "stations": [],
+                "error": "pass either near or comune"}
+    if near.strip():
+        lat_s, lon_s = near.split(",")
+        lat, lon = float(lat_s.strip()), float(lon_s.strip())
+    else:
+        coords = geocoding.load_comune_coords()
+        match = coords.get(comune.strip().upper())
+        if not match:
+            return {"source": ev_chargers.overpass.SOURCE_NAME, "count": 0, "stations": [],
+                    "error": f"comune '{comune}' not found"}
+        lat, lon = match
+
+    stations = ev_chargers.find_chargers(
+        near=(lat, lon), radius_km=radius_km, operator=operator, socket=socket,
+        min_power_kw=min_power_kw, free_only=free_only, public_only=public_only,
+    )
+    if limit > 0:
+        stations = stations[:limit]
+    query = {"near": f"{lat},{lon}", "radius_km": radius_km}
+    if comune:
+        query["comune"] = comune
+    if operator:
+        query["operator"] = operator
+    if socket:
+        query["socket"] = socket
+    if min_power_kw > 0:
+        query["min_power_kw"] = min_power_kw
+    if free_only:
+        query["free"] = True
+    if public_only:
+        query["public"] = True
+    return ev_chargers.response_envelope(stations, query)
 
 
 def main() -> None:

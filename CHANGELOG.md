@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-06-01
+
+### Added
+- **EV charging stations.** First step into the EV domain: a new `pitstop
+  chargers` CLI command and an MCP `find_chargers` tool backed by
+  OpenStreetMap via the **Overpass API** (open, no key required, ODbL-licensed
+  with attribution in output).
+- Filter by `--operator`, `--socket` (plug-type substring), `--min-power` kW,
+  `--fast` (≥50 kW), `--ultra-fast` (≥150 kW), `--free`, `--public`. Center
+  the search on a comune (`--comune NAME`, resolved via the existing
+  comune-coords reference) or a coordinate (`--near "lat,lon"`).
+- Per-charger output includes operator, plug types and counts, max kW, fee,
+  access, and distance.
+- 7-day on-disk cache for Overpass results (charger metadata changes slowly).
+
+### Why
+EV charging was the genuinely-different next data domain on the roadmap.
+Italy/EU don't have a single open per-station price feed yet (AFIR
+NAP/DATEX II is maturing but uneven), so v0.7.0 focuses on **locations and
+capabilities** — operator, plug types, max kW, fee, access — which is what
+"where can I charge near X" needs. Pricing is the planned next layer.
+
+### Notes
+- Open Charge Map's API now requires a registered key (HTTP 403 without);
+  OSM Overpass is fully open and well-covered for EU chargers, so it's the
+  pragmatic choice for v0.7.0.
+
 ## [0.6.0] - 2026-05-30
 
 ### Added
@@ -150,6 +177,7 @@ Initial release.
 - `--fuel` is a substring match, so `Gasolio` also matches variants such as
   `Gasolio Alpino`.
 
+[0.7.0]: https://github.com/galjos/pitstop/releases/tag/v0.7.0
 [0.6.0]: https://github.com/galjos/pitstop/releases/tag/v0.6.0
 [0.5.0]: https://github.com/galjos/pitstop/releases/tag/v0.5.0
 [0.4.0]: https://github.com/galjos/pitstop/releases/tag/v0.4.0

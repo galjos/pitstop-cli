@@ -13,7 +13,7 @@ description: Look up Italian fuel-station prices (petrol, diesel, GPL, methane, 
 - "Fuel stations in <comune/province>" and their prices
 - Comparing self-service vs served prices, or brands, for Italian stations
 
-Do **not** use for: live/intraday prices (this is daily data), EV charging, or countries other than Italy.
+Do **not** use the *fuel* commands for: live/intraday prices (this is daily data) or countries other than Italy. **For EV charging**, use `pitstop chargers` / MCP `find_chargers` — separate domain backed by OpenStreetMap (locations, plug types, max kW, fee, access; no pricing yet).
 
 ## Commands
 
@@ -29,6 +29,10 @@ pitstop stations --near 46.498,11.354 --radius 5 --fuel Benzina --self --json
 
 # Discover valid fuel-type names before filtering
 pitstop fuels --json
+
+# Find fast EV chargers near a coordinate or comune (OSM)
+pitstop chargers --near 46.498,11.354 --radius 5 --fast --json
+pitstop chargers --comune BOLZANO --radius 5 --socket ccs --json
 ```
 
 Key flags: `--comune`, `--provincia` (2-letter, e.g. `BZ`), `--brand`, `--near "lat,lon"` + `--radius` (km), `--fuel` (substring, case-insensitive), `--self` / `--served`, `--cheapest`, `--min-price` (price floor), `--fresh-within-days` (drop stale prices), `--max-deviation-pct` (drop prices >N% below their provincial median), `--limit`, `--json`. The MCP `find_cheapest` tool applies a fuel-aware floor and a 90-day freshness window by default.

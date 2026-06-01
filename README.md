@@ -51,6 +51,9 @@ pitstop stations --near 46.498,11.354 --radius 5 --fuel Benzina --self --json
 
 # Discover the fuel-type names present in the data
 pitstop fuels
+
+# Fast EV chargers (≥50 kW) within 5 km of Bolzano
+pitstop chargers --near 46.498,11.354 --radius 5 --fast --json
 ```
 
 `stations` flags: `--comune`, `--provincia`, `--brand`, `--near "lat,lon"`, `--radius`, `--fuel` (substring, case-insensitive), `--self`, `--served`, `--cheapest` (needs `--fuel`), `--min-price` (drop values below a floor; e.g. `1.2` to skip placeholders), `--fresh-within-days` (drop stale prices), `--max-deviation-pct` (drop prices more than N% below their fuel's provincial median — catches misreports), `--no-comune-validate`, `--limit`, `--json`. Loading flags (`--refresh`, `--max-age`, `--timeout`) apply to any data command.
@@ -89,7 +92,7 @@ pytest -q
 
 ## Status & roadmap
 
-v0.4.0 — fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, `--fresh-within-days` freshness filter, ISTAT-derived comune-coordinate validation, JSON), an MCP server, a Claude skill, tests, and CI.
+v0.7.0 — fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, `--fresh-within-days` freshness, combined 15% + Tukey IQR outlier rule, ISTAT comune-coordinate validation, JSON) + **EV charging stations via OSM Overpass** (operator, plug types, max kW, fee, access — `pitstop chargers`). MCP server, Claude skill, tests, CI.
 
 Planned, roughly in order:
 - **EV charging** (locations via Open Charge Map; prices via the AFIR National Access Point / DATEX II as that data matures);
@@ -99,6 +102,7 @@ Planned, roughly in order:
 
 - Fuel stations and prices: **MIMIT Osservaprezzi Carburanti** open data.
 - Comune coordinates (validation): **opendatasicilia/comuni-italiani** (ISTAT-derived).
+- EV charging stations: **OpenStreetMap** via the Overpass API (© OpenStreetMap contributors, ODbL).
 
 ## Links
 

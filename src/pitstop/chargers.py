@@ -11,7 +11,7 @@ import math
 import re
 from dataclasses import dataclass, field
 
-from . import overpass
+from . import cpo_tariffs, overpass
 from .core import haversine_km, in_italy, now_iso
 
 # Map OSM `socket:<key>` to a human-readable plug name.
@@ -61,6 +61,7 @@ class EvStation:
     access: str = ""
     opening_hours: str = ""
     distance_km: float | None = None
+    tariff_info_url: str | None = None  # operator's official tariff page
 
     def to_dict(self) -> dict:
         d = {
@@ -83,6 +84,8 @@ class EvStation:
             d["opening_hours"] = self.opening_hours
         if self.distance_km is not None:
             d["distance_km"] = self.distance_km
+        if self.tariff_info_url:
+            d["tariff_info_url"] = self.tariff_info_url
         return d
 
 
@@ -213,6 +216,7 @@ def find_chargers(
         if public_only and st.access and st.access.lower() not in ("public", "yes", "permissive"):
             continue
         st.distance_km = round(haversine_km(near[0], near[1], st.lat, st.lon), 2)
+        st.tariff_info_url = cpo_tariffs.lookup(st.operator)
         out.append(st)
 
     out.sort(key=lambda s: s.distance_km if s.distance_km is not None else math.inf)
@@ -231,6 +235,11 @@ def response_envelope(stations: list[EvStation], query: dict) -> dict:
             "Unofficial tool. EV-charger data from OpenStreetMap via Overpass API "
             "(© OpenStreetMap contributors, ODbL). Coverage and freshness vary. "
             "Power, plug types, and access fields reflect what mappers entered — "
-            "verify on-site or via the operator before relying on them."
+            "verify on-site or via the operator before relying on them. "
+            "Per-station tariffs are NOT in this dataset: as of mid-2026 they are "
+            "not openly available in Italy (AFIR DATEX II is upload-only; "
+            "commercial APIs like Chargeprice/Eco-Movement carry them). The "
+            "`tariff_info_url` field on each station, when present, links to the "
+            "operator's own official tariff page."
         ),
     }

@@ -176,10 +176,13 @@ _FIND_CHARGERS_DESC = (
     "municipality name; resolved via the comune-coords reference). Filter by "
     "operator substring, plug type (e.g. 'ccs', 'chademo', 'type2'), minimum "
     "max-power kW, free-only, and public-access-only. Returns a JSON envelope "
-    "with operator, plug types, max kW, fee, access, and distance per station. "
-    "Note: power and plug fields reflect OSM mappers' input — verify with the "
-    "operator before relying. EV pricing isn't in this dataset; AFIR/DATEX II "
-    "is the future path for that."
+    "with operator, plug types, max kW, fee, access, distance, and (when the "
+    "operator is recognized) a `tariff_info_url` pointing to the operator's "
+    "official tariff page. **Per-station €/kWh tariffs are not in this dataset** "
+    "— as of mid-2026 they are not openly machine-readable in Italy (AFIR DATEX "
+    "II is upload-only; Chargeprice/Eco-Movement are paid). When a user asks "
+    "about price, surface the `tariff_info_url` for the relevant operator(s) "
+    "rather than guessing a price."
 )
 
 

@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-06-01
+
+### Added
+- **EV operator tariff URLs.** Each charger result now carries a
+  `tariff_info_url` pointing to the operator's official tariff page (when the
+  operator is recognized). The CLI prints a footnote like
+  `5/5 stations have an operator tariff page`. New `cpo_tariffs.py` module
+  with a substring-matching registry covering the major Italian CPOs:
+  Alperia, Neogy, Enel X Way, Be Charge, Free To X, Ionity, Tesla,
+  Plenitude, Atlante, Repower, A2A, Edison, Acea, EVway, and others.
+- MCP `find_chargers` tool description now instructs the agent to surface
+  `tariff_info_url` when the user asks about price instead of guessing.
+
+### Why this isn't real per-kWh prices
+The honest finding from a thorough investigation:
+- **AFIR DATEX II** (since 14 Apr 2026) is a CPO→NAP *upload* channel — there
+  is no documented public consumer-query endpoint.
+- **Italy's PUN** (piattaformaunicanazionale.it) is an ArcGIS-backed SPA with
+  no documented public REST API for tariffs.
+- **Chargeprice** and **Eco-Movement** carry per-station tariffs but require
+  paid licenses.
+- **OSM** has only `fee=yes/no` (already surfaced), not actual €/kWh.
+
+So per-station tariffs are not openly machine-readable in Italy in mid-2026.
+Surfacing the operator's own tariff page is the most useful + honest thing
+the tool can do today. Revisit when AFIR data consumer-side matures.
+
 ## [0.7.0] - 2026-06-01
 
 ### Added
@@ -177,6 +204,7 @@ Initial release.
 - `--fuel` is a substring match, so `Gasolio` also matches variants such as
   `Gasolio Alpino`.
 
+[0.8.0]: https://github.com/galjos/pitstop/releases/tag/v0.8.0
 [0.7.0]: https://github.com/galjos/pitstop/releases/tag/v0.7.0
 [0.6.0]: https://github.com/galjos/pitstop/releases/tag/v0.6.0
 [0.5.0]: https://github.com/galjos/pitstop/releases/tag/v0.5.0

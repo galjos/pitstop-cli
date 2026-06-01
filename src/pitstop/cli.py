@@ -259,6 +259,10 @@ def _print_chargers_table(stations) -> int:
     widths = [max(len(r[i]) for r in rows) for i in range(len(headers))]
     for r in rows:
         print("  ".join(c.ljust(widths[i]) for i, c in enumerate(r)))
+    with_tariff = sum(1 for s in stations if s.tariff_info_url)
+    if with_tariff:
+        print(f"\n{with_tariff}/{len(stations)} stations have an operator tariff page "
+              f"(--json to see `tariff_info_url`). Per-station prices are not in open data.")
     return 0
 
 

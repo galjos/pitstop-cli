@@ -73,6 +73,34 @@ def test_find_chargers_filters_min_power(monkeypatch):
     assert [s.osm_id for s in fast] == [11]
 
 
+def test_cpo_tariffs_lookup_matches_substrings_and_prefers_longest():
+    from pitstop import cpo_tariffs
+    assert cpo_tariffs.lookup("Alperia") and "alperia" in cpo_tariffs.lookup("Alperia").lower()
+    assert cpo_tariffs.lookup("Alperia Smart Mobility") == cpo_tariffs.lookup("Alperia")
+    # "Enel X Way" must win over "Enel" — longest-key-first lookup.
+    enelxway = cpo_tariffs.lookup("Enel X Way")
+    enel = cpo_tariffs.lookup("Enel")
+    assert enelxway == cpo_tariffs.TARIFF_URLS["enel x way"]
+    assert enel == cpo_tariffs.TARIFF_URLS["enel"]
+    assert cpo_tariffs.lookup("Some unknown operator") is None
+    assert cpo_tariffs.lookup("") is None
+
+
+def test_find_chargers_attaches_tariff_url(monkeypatch):
+    elements = [
+        _node(30, 46.50, 11.35, {"amenity": "charging_station", "operator": "Alperia",
+                                 "socket:type2": "1"}),
+        _node(31, 46.50, 11.35, {"amenity": "charging_station", "operator": "Unknown CPO",
+                                 "socket:type2": "1"}),
+    ]
+    monkeypatch.setattr(chargers.overpass, "fetch_elements", lambda *a, **k: elements)
+    out = chargers.find_chargers(near=(46.50, 11.35), radius_km=5)
+    by_id = {s.osm_id: s for s in out}
+    assert by_id[30].tariff_info_url is not None
+    assert "alperia" in by_id[30].tariff_info_url.lower()
+    assert by_id[31].tariff_info_url is None
+
+
 def test_find_chargers_filters_operator(monkeypatch):
     elements = [
         _node(20, 46.50, 11.35, {"amenity": "charging_station", "operator": "Alperia",

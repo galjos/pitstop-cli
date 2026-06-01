@@ -13,7 +13,7 @@ description: Look up Italian fuel-station prices (petrol, diesel, GPL, methane, 
 - "Fuel stations in <comune/province>" and their prices
 - Comparing self-service vs served prices, or brands, for Italian stations
 
-Do **not** use the *fuel* commands for: live/intraday prices (this is daily data) or countries other than Italy. **For EV charging**, use `pitstop chargers` / MCP `find_chargers` — separate domain backed by OpenStreetMap (locations, plug types, max kW, fee, access; no pricing yet).
+Do **not** use the *fuel* commands for: live/intraday prices (this is daily data) or countries other than Italy. **For EV charging**, use `pitstop chargers` / MCP `find_chargers` — separate domain backed by OpenStreetMap (locations, plug types, max kW, fee, access). **Per-station €/kWh tariffs are NOT in open data in Italy** as of mid-2026; each charger result includes a `tariff_info_url` linking to the operator's official tariff page when the operator is known — surface that to the user instead of guessing a price.
 
 ## Commands
 

@@ -92,7 +92,7 @@ pytest -q
 
 ## Status & roadmap
 
-v0.7.0 — fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, `--fresh-within-days` freshness, combined 15% + Tukey IQR outlier rule, ISTAT comune-coordinate validation, JSON) + **EV charging stations via OSM Overpass** (operator, plug types, max kW, fee, access — `pitstop chargers`). MCP server, Claude skill, tests, CI.
+v0.8.0 — fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, `--fresh-within-days` freshness, combined 15% + Tukey IQR outlier rule, ISTAT comune-coordinate validation, JSON) + **EV charging stations via OSM Overpass** (operator, plug types, max kW, fee, access — `pitstop chargers`) + **operator tariff-page URLs** attached to each EV result (per-kWh prices are not in open data; see CHANGELOG). MCP server, Claude skill, tests, CI.
 
 Planned, roughly in order:
 - **EV charging** (locations via Open Charge Map; prices via the AFIR National Access Point / DATEX II as that data matures);

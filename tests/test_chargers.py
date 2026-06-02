@@ -1,3 +1,5 @@
+import pytest
+
 from pitstop import chargers
 
 
@@ -147,6 +149,7 @@ def test_geojson_envelope_shape():
 
 def test_mcp_find_chargers_normalizes_bilingual_comune(monkeypatch):
     """MCP path must resolve "Bozen" -> "BOLZANO" like the CLI does."""
+    pytest.importorskip("mcp")  # the [mcp] extra is optional; skip in CI test job
     from pitstop import mcp_server
     # No real network: serve a small coords table and a fake Overpass response.
     monkeypatch.setattr(

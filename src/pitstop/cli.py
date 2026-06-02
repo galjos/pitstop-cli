@@ -76,6 +76,11 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_load_args(fuels)
     fuels.set_defaults(func=_cmd_fuels)
 
+    stats = sub.add_parser("stats", help="show macro price statistics by province")
+    _add_load_args(stats)
+    stats.add_argument("--fuel", default="", help="filter stats to these fuels (comma-separated)")
+    stats.set_defaults(func=_cmd_stats)
+
     chargers = sub.add_parser("chargers", help="find EV charging stations (OSM)")
     chargers.add_argument("--near", default="", help='proximity to "lat,lon" (or use --comune)')
     chargers.add_argument("--comune", default="", help="center the search on this Italian comune")
@@ -91,6 +96,7 @@ def _build_parser() -> argparse.ArgumentParser:
     chargers.add_argument("--public", action="store_true", help="only public access")
     chargers.add_argument("--limit", type=int, default=20, help="max stations; 0 = no limit")
     chargers.add_argument("--json", dest="as_json", action="store_true")
+    chargers.add_argument("--geojson", dest="as_geojson", action="store_true", help="emit GeoJSON FeatureCollection")
     chargers.add_argument("--refresh", action="store_true",
                           help="bypass the 7-day OSM cache")
     chargers.set_defaults(func=_cmd_chargers)
@@ -103,6 +109,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _add_load_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--json", dest="as_json", action="store_true", help="emit JSON instead of a table")
+    sp.add_argument("--geojson", dest="as_geojson", action="store_true", help="emit GeoJSON FeatureCollection")
     sp.add_argument("--refresh", action="store_true", help="bypass cache and re-download source files")
     sp.add_argument("--max-age", type=int, default=core.DEFAULT_MAX_AGE,
                     help="seconds a cached file stays fresh")
@@ -115,6 +122,7 @@ def _load(args) -> core.Dataset:
 
 
 def _cmd_stations(args) -> int:
+    from . import geocoding
     if args.self_only and args.served_only:
         print("error: --self and --served are mutually exclusive", file=sys.stderr)
         return 2
@@ -132,10 +140,11 @@ def _cmd_stations(args) -> int:
             return 2
 
     ds = _load(args)
+    comune_norm = geocoding.normalize_comune(args.comune)
 
     out = core.query_stations(
         ds,
-        comune=args.comune,
+        comune=comune_norm,
         provincia=args.provincia,
         brand=args.brand,
         near=(near_lat, near_lon) if use_near else None,
@@ -153,7 +162,7 @@ def _cmd_stations(args) -> int:
     )
 
     query: dict = {}
-    for key, val in (("comune", args.comune), ("provincia", args.provincia),
+    for key, val in (("comune", comune_norm or args.comune), ("provincia", args.provincia),
                      ("brand", args.brand), ("fuel", args.fuel)):
         if val.strip():
             query[key] = val
@@ -177,7 +186,49 @@ def _cmd_stations(args) -> int:
 
     if args.as_json:
         return _print_stations_json(ds, out, query)
+    if args.as_geojson:
+        return _print_stations_geojson(ds, out, query)
     return _print_stations_table(out, use_near)
+
+
+def _cmd_stats(args) -> int:
+    ds = _load(args)
+    stats = core.fuel_stats(ds, fuel=args.fuel)
+    
+    if args.as_json:
+        _dump({
+            "source": core.SOURCE_NAME,
+            "price_extraction_date": ds.price_date,
+            "generated_at": core.now_iso(),
+            "stats": stats
+        })
+        return 0
+        
+    return _print_stats_table(stats)
+
+
+def _print_stats_table(stats: dict) -> int:
+    for fuel, data in stats.items():
+        print(f"\n--- {fuel.upper()} ---")
+        print(f"{'PR'.ljust(4)}  {'MEDIAN'.ljust(8)}  {'MIN'.ljust(8)}  {'MAX'.ljust(8)}  {'SAMPLES'}")
+        
+        # Sort provinces by code
+        sorted_provs = sorted(data["provinces"].items())
+        for prov, p_stats in sorted_provs:
+            print(f"{prov.ljust(4)}  "
+                  f"{p_stats['median']:<8.3f}  "
+                  f"{p_stats['min']:<8.3f}  "
+                  f"{p_stats['max']:<8.3f}  "
+                  f"{p_stats['count']}")
+                  
+        nat = data["national"]
+        print(f"{'---'.ljust(4)}  {'---'.ljust(8)}  {'---'.ljust(8)}  {'---'.ljust(8)}  {'---'}")
+        print(f"{'NAT'.ljust(4)}  "
+              f"{nat['median']:<8.3f}  "
+              f"{nat['min']:<8.3f}  "
+              f"{nat['max']:<8.3f}  "
+              f"{nat['count']}")
+    return 0
 
 
 def _cmd_chargers(args) -> int:
@@ -194,7 +245,8 @@ def _cmd_chargers(args) -> int:
             return 2
     else:
         coords = geocoding.load_comune_coords()
-        true = coords.get(args.comune.strip().upper())
+        comune_norm = geocoding.normalize_comune(args.comune)
+        true = coords.get(comune_norm)
         if not true:
             print(f"error: comune '{args.comune}' not found in the comune-coords reference",
                   file=sys.stderr)
@@ -207,7 +259,7 @@ def _cmd_chargers(args) -> int:
     elif args.fast:
         min_kw = max(min_kw, 50.0)
 
-    stations = chargers.find_chargers(
+    stations, error = chargers.find_chargers(
         near=(lat, lon),
         radius_km=args.radius,
         operator=args.operator,
@@ -235,7 +287,10 @@ def _cmd_chargers(args) -> int:
         query["public"] = True
 
     if args.as_json:
-        _dump(chargers.response_envelope(stations, query))
+        _dump(chargers.response_envelope(stations, query, error=error))
+        return 0
+    if args.as_geojson:
+        _dump(chargers.geojson_envelope(stations, query, error=error))
         return 0
     return _print_chargers_table(stations)
 
@@ -259,6 +314,11 @@ def _print_chargers_table(stations) -> int:
     widths = [max(len(r[i]) for r in rows) for i in range(len(headers))]
     for r in rows:
         print("  ".join(c.ljust(widths[i]) for i, c in enumerate(r)))
+
+    if stations:
+        top = stations[0]
+        print(f"\nTop result map: {core.navigation_url(top.lat, top.lon)}")
+
     with_tariff = sum(1 for s in stations if s.tariff_info_url)
     if with_tariff:
         print(f"\n{with_tariff}/{len(stations)} stations have an operator tariff page "
@@ -295,6 +355,11 @@ def _print_stations_json(ds: core.Dataset, stations: list[core.Station], query: 
     return 0
 
 
+def _print_stations_geojson(ds: core.Dataset, stations: list[core.Station], query: dict) -> int:
+    _dump(core.geojson_envelope(ds, stations, query))
+    return 0
+
+
 def _print_stations_table(stations: list[core.Station], use_near: bool) -> int:
     any_suspect = False
     any_outlier = False
@@ -325,6 +390,11 @@ def _print_stations_table(stations: list[core.Station], use_near: bool) -> int:
     widths = [max(len(r[i]) for r in rows) for i in range(len(headers))]
     for r in rows:
         print("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(r)))
+
+    if stations:
+        top = stations[0]
+        print(f"\nTop result map: {core.navigation_url(top.lat, top.lon)}")
+
     if any_outlier:
         print("\n? price >15% below its (fuel, provincia) median — may be a misreport.")
     if any_suspect:

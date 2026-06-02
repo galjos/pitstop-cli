@@ -68,8 +68,9 @@ def test_find_chargers_filters_min_power(monkeypatch):
                                  "operator": "Y", "socket:type2_combo": "1",
                                  "socket:type2_combo:output": "150 kW"}),
     ]
-    monkeypatch.setattr(chargers.overpass, "fetch_elements", lambda *a, **k: elements)
-    fast = chargers.find_chargers(near=(46.50, 11.35), radius_km=5, min_power_kw=50)
+    monkeypatch.setattr(chargers.overpass, "fetch_elements", lambda *a, **k: (elements, None))
+    fast, error = chargers.find_chargers(near=(46.50, 11.35), radius_km=5, min_power_kw=50)
+    assert error is None
     assert [s.osm_id for s in fast] == [11]
 
 
@@ -93,8 +94,9 @@ def test_find_chargers_attaches_tariff_url(monkeypatch):
         _node(31, 46.50, 11.35, {"amenity": "charging_station", "operator": "Unknown CPO",
                                  "socket:type2": "1"}),
     ]
-    monkeypatch.setattr(chargers.overpass, "fetch_elements", lambda *a, **k: elements)
-    out = chargers.find_chargers(near=(46.50, 11.35), radius_km=5)
+    monkeypatch.setattr(chargers.overpass, "fetch_elements", lambda *a, **k: (elements, None))
+    out, error = chargers.find_chargers(near=(46.50, 11.35), radius_km=5)
+    assert error is None
     by_id = {s.osm_id: s for s in out}
     assert by_id[30].tariff_info_url is not None
     assert "alperia" in by_id[30].tariff_info_url.lower()
@@ -108,6 +110,61 @@ def test_find_chargers_filters_operator(monkeypatch):
         _node(21, 46.50, 11.35, {"amenity": "charging_station", "operator": "Be Charge",
                                  "socket:type2": "1"}),
     ]
-    monkeypatch.setattr(chargers.overpass, "fetch_elements", lambda *a, **k: elements)
-    only = chargers.find_chargers(near=(46.50, 11.35), radius_km=5, operator="alperia")
+    monkeypatch.setattr(chargers.overpass, "fetch_elements", lambda *a, **k: (elements, None))
+    only, error = chargers.find_chargers(near=(46.50, 11.35), radius_km=5, operator="alperia")
+    assert error is None
     assert [s.osm_id for s in only] == [20]
+
+
+# ---- v0.9.0 additions: error envelope, GeoJSON, MCP bilingual normalize ----
+
+
+def test_response_envelope_carries_error_field():
+    env = chargers.response_envelope([], {"comune": "Nowhere"}, error="overpass unreachable")
+    assert env["count"] == 0
+    assert env["error"] == "overpass unreachable"
+    assert "disclaimer" in env  # full shape preserved on error path
+
+
+def test_geojson_envelope_shape():
+    el = _node(50, 46.50, 11.35, {"amenity": "charging_station", "operator": "Alperia",
+                                  "socket:type2_combo": "2",
+                                  "socket:type2_combo:output": "150 kW"})
+    st = chargers.parse_element(el)
+    st.distance_km = 1.0
+    out = chargers.geojson_envelope([st], {"near": "46.50,11.35"})
+    assert out["type"] == "FeatureCollection"
+    assert "metadata" in out and "source" in out["metadata"]
+    assert len(out["features"]) == 1
+    feat = out["features"][0]
+    assert feat["type"] == "Feature"
+    assert feat["geometry"]["type"] == "Point"
+    # GeoJSON convention: [lon, lat]
+    assert feat["geometry"]["coordinates"] == [11.35, 46.50]
+    assert "lat" not in feat["properties"]
+    assert "lon" not in feat["properties"]
+
+
+def test_mcp_find_chargers_normalizes_bilingual_comune(monkeypatch):
+    """MCP path must resolve "Bozen" -> "BOLZANO" like the CLI does."""
+    from pitstop import mcp_server
+    # No real network: serve a small coords table and a fake Overpass response.
+    monkeypatch.setattr(
+        mcp_server.geocoding, "load_comune_coords",
+        lambda *a, **k: {"BOLZANO": (46.498, 11.354)},
+    )
+    monkeypatch.setattr(
+        mcp_server.ev_chargers.overpass, "fetch_elements",
+        lambda *a, **k: (
+            [_node(99, 46.498, 11.354, {"amenity": "charging_station",
+                                         "operator": "Alperia",
+                                         "socket:type2": "1"})],
+            None,
+        ),
+    )
+    # FastMCP tools wrap the function; the underlying impl is preserved as fn
+    # when callable, otherwise call_tool via asyncio. Try the simpler path.
+    result = mcp_server.find_chargers(comune="Bozen", radius_km=3, limit=1)
+    assert "error" not in result, f"got error: {result.get('error')}"
+    assert result["count"] == 1
+    assert result["stations"][0]["operator"] == "Alperia"

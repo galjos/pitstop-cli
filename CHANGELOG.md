@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-06-02
+
+### Added
+- **Multi-fuel query support.** The `--fuel` flag now accepts a comma-separated
+  list of fuels (e.g. `--fuel "Benzina,Gasolio"`). This allows retrieving and
+  ranking multiple fuel types in a single request, which is much more efficient
+  for agentic interactions.
+- **International Municipality Mapping.** Added a `BILINGUAL_MAP` in
+  `geocoding.py` that resolves common English, French, and German names for
+  major Italian cities (e.g. Rome/Rom/Naples/Mailand/Venise) to their Italian
+  equivalents in the dataset.
+- **Improved Coordinate Resilience.** `query_stations` now prioritizes the
+  **calculated centroid** of all stations in a municipality (robust for 
+  $N \ge 3$) over the external ISTAT reference coordinate. This makes the 
+  `coordinate_suspect` flagging much more resilient to errors in the external 
+  comune-coordinate file (e.g. the Bolzano center bug).
+- **JSON Error Reporting for Overpass.** Fetch errors from the Overpass API 
+  (EV chargers) are now captured and surfaced inside the JSON response envelope
+  under an `error` field. This allows callers to distinguish between "no 
+  chargers found" and "service currently unavailable".
+
+### Changed
+- `chargers.find_chargers` and `overpass.fetch_elements` now return a tuple
+  `(data, error)` to facilitate structured error reporting.
+
 ## [0.8.0] - 2026-06-01
 
 ### Added

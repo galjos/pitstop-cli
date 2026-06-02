@@ -294,3 +294,82 @@ def test_to_float():
 def test_normalize_ts():
     assert core._normalize_ts("27/05/2026 21:30:07") == "2026-05-27T21:30:07"
     assert core._normalize_ts("not a date") == "not a date"
+
+
+# ---- v0.9.0 additions: multi-fuel, bilingual comuni, stats, geo, navigation ----
+
+
+def test_filter_prices_multi_fuel_comma_list():
+    prices = [
+        core.Price("Benzina", 1.9, True, ""),
+        core.Price("Gasolio", 2.0, True, ""),
+        core.Price("GPL", 0.8, True, ""),
+    ]
+    out = core.filter_prices(prices, fuel="Benzina,Gasolio")
+    assert {p.fuel for p in out} == {"Benzina", "Gasolio"}
+    # spaces between commas tolerated
+    assert {p.fuel for p in core.filter_prices(prices, fuel=" Benzina , GPL ")} == {"Benzina", "GPL"}
+
+
+def test_normalize_comune_bilingual():
+    from pitstop import geocoding
+    assert geocoding.normalize_comune("Bozen") == "BOLZANO"
+    assert geocoding.normalize_comune("Rome") == "ROMA"
+    assert geocoding.normalize_comune("Mailand") == "MILANO"
+    assert geocoding.normalize_comune("Brixen") == "BRESSANONE"
+    assert geocoding.normalize_comune("Venise") == "VENEZIA"  # French
+    # Italian/already-uppercase passes through unchanged.
+    assert geocoding.normalize_comune("bolzano") == "BOLZANO"
+    assert geocoding.normalize_comune("MILANO") == "MILANO"
+    # Empty / whitespace
+    assert geocoding.normalize_comune("") == ""
+    assert geocoding.normalize_comune("   ") == ""
+
+
+def test_bilingual_map_has_no_identity_or_duplicate_entries():
+    from pitstop import geocoding
+    identity = [k for k, v in geocoding.BILINGUAL_MAP.items() if k == v]
+    assert identity == [], f"identity mappings in BILINGUAL_MAP: {identity}"
+
+
+def test_navigation_url_format():
+    url = core.navigation_url(46.498, 11.354)
+    assert url.startswith("https://")
+    assert "google" in url and "maps" in url
+    assert "46.498" in url and "11.354" in url
+
+
+def test_fuel_stats_shape(registry_path, prices_path):
+    stations, _ = core._parse_registry(registry_path)
+    core._attach_prices(prices_path, stations)
+    ds = core.Dataset(stations=stations, registry_date="2026-05-28", price_date="2026-05-28")
+    stats = core.fuel_stats(ds, fuel="Benzina")
+    assert "Benzina" in stats
+    benz = stats["Benzina"]
+    assert "provinces" in benz and "national" in benz
+    assert set(benz["provinces"]) == {"RM", "MI"}
+    rm = benz["provinces"]["RM"]
+    assert rm["count"] == 1
+    assert rm["median"] == pytest.approx(1.899, abs=1e-3)
+    nat = benz["national"]
+    assert nat["count"] == 2  # one RM + one MI
+
+
+def test_geojson_envelope_shape(registry_path, prices_path):
+    stations, _ = core._parse_registry(registry_path)
+    core._attach_prices(prices_path, stations)
+    ds = core.Dataset(stations=stations, registry_date="2026-05-28", price_date="2026-05-28")
+    out = core.geojson_envelope(ds, list(stations.values())[:2], {"comune": "ROMA"})
+    assert out["type"] == "FeatureCollection"
+    assert out["metadata"]["registry_extraction_date"] == "2026-05-28"
+    assert len(out["features"]) == 2
+    feat = out["features"][0]
+    assert feat["type"] == "Feature"
+    assert feat["geometry"]["type"] == "Point"
+    # GeoJSON is [lon, lat] (NOT [lat, lon])
+    assert len(feat["geometry"]["coordinates"]) == 2
+    assert feat["geometry"]["coordinates"][0] == pytest.approx(stations["1"].lon, abs=1e-4)
+    assert feat["geometry"]["coordinates"][1] == pytest.approx(stations["1"].lat, abs=1e-4)
+    # Coordinates must not be duplicated inside properties.
+    assert "lat" not in feat["properties"]
+    assert "lon" not in feat["properties"]

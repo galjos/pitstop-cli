@@ -11,7 +11,7 @@ import math
 import re
 from dataclasses import dataclass, field
 
-from . import cpo_tariffs, overpass
+from . import core, cpo_tariffs, overpass
 from .core import haversine_km, in_italy, now_iso
 
 # Map OSM `socket:<key>` to a human-readable plug name.
@@ -70,6 +70,7 @@ class EvStation:
             "operator": self.operator,
             "lat": self.lat,
             "lon": self.lon,
+            "navigation_url": core.navigation_url(self.lat, self.lon),
             "sockets": [s.to_dict() for s in self.sockets],
         }
         if self.capacity is not None:
@@ -87,6 +88,16 @@ class EvStation:
         if self.tariff_info_url:
             d["tariff_info_url"] = self.tariff_info_url
         return d
+
+    def to_geojson_feature(self) -> dict:
+        props = self.to_dict()
+        lat = props.pop("lat")
+        lon = props.pop("lon")
+        return {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            "properties": props,
+        }
 
 
 def _parse_kw(raw: str | None) -> float | None:
@@ -187,15 +198,16 @@ def find_chargers(
     free_only: bool = False,
     public_only: bool = False,
     refresh: bool = False,
-) -> list[EvStation]:
-    """Fetch and filter EV charging stations from OSM around a point."""
+) -> tuple[list[EvStation], str | None]:
+    """Fetch and filter EV charging stations from OSM around a point.
+    Returns (stations, error_msg)."""
     if not in_italy(near[0], near[1]):
         # Allow queries anywhere — pitstop's Italy bbox is for the fuel data; for
         # OSM EV the user can query elsewhere if they want. Just don't bail.
         pass
     radius_m = int(max(100, radius_km * 1000))
-    elements = overpass.fetch_elements(_overpass_query(near[0], near[1], radius_m),
-                                        refresh=refresh)
+    elements, error = overpass.fetch_elements(_overpass_query(near[0], near[1], radius_m),
+                                               refresh=refresh)
 
     out: list[EvStation] = []
     op_lc = operator.strip().lower()
@@ -220,14 +232,14 @@ def find_chargers(
         out.append(st)
 
     out.sort(key=lambda s: s.distance_km if s.distance_km is not None else math.inf)
-    return out
+    return out, error
 
 
-def response_envelope(stations: list[EvStation], query: dict) -> dict:
-    return {
+def response_envelope(stations: list[EvStation], query: dict, error: str | None = None) -> dict:
+    env = {
         "source": overpass.SOURCE_NAME,
         "source_url": overpass.SOURCE_URL,
-        "generated_at": now_iso(),
+        "generated_at": core.now_iso(),
         "query": query,
         "count": len(stations),
         "stations": [s.to_dict() for s in stations],
@@ -243,3 +255,27 @@ def response_envelope(stations: list[EvStation], query: dict) -> dict:
             "operator's own official tariff page."
         ),
     }
+    if error:
+        env["error"] = error
+    return env
+
+
+def geojson_envelope(stations: list[EvStation], query: dict, error: str | None = None) -> dict:
+    env = {
+        "type": "FeatureCollection",
+        "metadata": {
+            "source": overpass.SOURCE_NAME,
+            "generated_at": core.now_iso(),
+            "query": query,
+            "disclaimer": (
+                "Unofficial tool. EV-charger data from OpenStreetMap via Overpass API "
+                "(© OpenStreetMap contributors, ODbL). Coverage and freshness vary. "
+                "Power, plug types, and access fields reflect what mappers entered — "
+                "verify on-site or via the operator before relying on them."
+            ),
+        },
+        "features": [s.to_geojson_feature() for s in stations],
+    }
+    if error:
+        env["metadata"]["error"] = error
+    return env

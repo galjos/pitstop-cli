@@ -14,8 +14,9 @@ mcp = FastMCP("pitstop")
 
 _CAVEATS = (
     " Data is daily (not real-time): prices are as of ~08:00 the day before "
-    "price_extraction_date. Italy only. `fuel` is a substring match, so 'Gasolio' "
-    "also matches variants like 'Gasolio Alpino'. Some operators report placeholder "
+    "price_extraction_date. Italy only. `fuel` supports comma-separated values "
+    "(e.g. 'Benzina,Gasolio') and is a substring match. `comune` supports "
+    "international names (Rome, Mailand, Venise). Some operators report placeholder "
     "prices (e.g. 1.000); set min_price (e.g. 1.2) to skip them when ranking. Each "
     "price carries regional_median, deviation_pct, and an `outlier` flag (true when "
     ">15% below the fuel's median in that provincia) — use the flag to caveat or "
@@ -24,21 +25,23 @@ _CAVEATS = (
 
 _FIND_STATIONS_DESC = (
     "Find Italian fuel stations and their prices from MIMIT open data. Filter by "
-    "comune (municipality), provincia (2-letter, e.g. BZ), brand, fuel (substring, "
-    'case-insensitive), near ("lat,lon") within radius_km, and service mode '
-    "(self_only/served_only). Set cheapest=True to sort by ascending price, and "
-    "min_price to drop placeholder values. Returns a JSON envelope with provenance "
-    "and a stations list." + _CAVEATS
+    "comune (municipality; supports international names like Rome/Milan/Bozen), "
+    "provincia (2-letter, e.g. BZ), brand, fuel (substring, case-insensitive; "
+    'supports comma-separated lists), near ("lat,lon") within radius_km, and '
+    "service mode (self_only/served_only). Set cheapest=True to sort by ascending "
+    "price, and min_price to drop placeholder values. Returns a JSON envelope with "
+    "provenance, navigation URLs, and a stations list." + _CAVEATS
 )
 
 _FIND_CHEAPEST_DESC = (
     "Find the cheapest Italian stations for a given fuel, near a coordinate "
-    '("lat,lon") or in a comune. By default applies a fuel-aware price floor '
-    "(skips placeholder values for petrol/diesel, no floor for cheap fuels like "
-    "GPL), ignores prices not updated in the last 90 days, and drops statistical "
-    "outliers (>15% below median OR below the Tukey lower fence). Override via "
-    "min_price, max_age_days, drop_outliers. Returns a provenance-carrying JSON "
-    "envelope sorted cheapest-first." + _CAVEATS
+    '("lat,lon") or in a comune (supports international names). By default '
+    "applies a fuel-aware price floor (skips placeholder values for petrol/diesel, "
+    "no floor for cheap fuels like GPL), ignores prices not updated in the last "
+    "90 days, and drops statistical outliers (>15% below median OR below the "
+    "Tukey lower fence). Override via min_price, max_age_days, drop_outliers. "
+    "Returns a provenance-carrying JSON envelope sorted cheapest-first with "
+    "navigation URLs." + _CAVEATS
 )
 
 
@@ -66,6 +69,22 @@ def list_fuels() -> dict:
     }
 
 
+@mcp.tool()
+def get_stats(fuel: str = "") -> dict:
+    """Get macro-level price statistics (median, min, max) per Italian province
+    and a national aggregate. Use this to give advice on whether a region is
+    generally cheaper or more expensive than others. `fuel` supports
+    comma-separated values."""
+    ds = core.load()
+    stats = core.fuel_stats(ds, fuel=fuel)
+    return {
+        "source": core.SOURCE_NAME,
+        "price_extraction_date": ds.price_date,
+        "generated_at": core.now_iso(),
+        "stats": stats
+    }
+
+
 @mcp.tool(description=_FIND_STATIONS_DESC)
 def find_stations(
     fuel: str = "",
@@ -84,9 +103,10 @@ def find_stations(
     limit: int = 20,
 ) -> dict:
     ds = core.load()
+    comune_norm = geocoding.normalize_comune(comune)
     stations = core.query_stations(
         ds,
-        comune=comune,
+        comune=comune_norm,
         provincia=provincia,
         brand=brand,
         near=_parse_near(near),
@@ -105,7 +125,7 @@ def find_stations(
         k: v
         for k, v in {
             "fuel": fuel,
-            "comune": comune,
+            "comune": comune_norm or None,
             "provincia": provincia,
             "brand": brand,
             "near": near,
@@ -139,9 +159,10 @@ def find_cheapest(
     if max_age_days < 0:
         max_age_days = 90  # ignore stale records when ranking by price
     ds = core.load()
+    comune_norm = geocoding.normalize_comune(comune)
     stations = core.query_stations(
         ds,
-        comune=comune,
+        comune=comune_norm,
         near=_parse_near(near),
         radius_km=radius_km,
         fuel=fuel,
@@ -160,8 +181,8 @@ def find_cheapest(
         "fresh_within_days": max_age_days,
         "drop_outliers": drop_outliers,
     }
-    if comune:
-        query["comune"] = comune
+    if comune_norm:
+        query["comune"] = comune_norm
     if near.strip():
         query["near"] = near
         query["radius_km"] = radius_km
@@ -199,20 +220,21 @@ def find_chargers(
     limit: int = 20,
 ) -> dict:
     if not near.strip() and not comune.strip():
-        return {"source": ev_chargers.overpass.SOURCE_NAME, "count": 0, "stations": [],
-                "error": "pass either near or comune"}
+        return ev_chargers.response_envelope([], {}, error="pass either near or comune")
     if near.strip():
         lat_s, lon_s = near.split(",")
         lat, lon = float(lat_s.strip()), float(lon_s.strip())
     else:
+        comune_norm = geocoding.normalize_comune(comune)
         coords = geocoding.load_comune_coords()
-        match = coords.get(comune.strip().upper())
+        match = coords.get(comune_norm)
         if not match:
-            return {"source": ev_chargers.overpass.SOURCE_NAME, "count": 0, "stations": [],
-                    "error": f"comune '{comune}' not found"}
+            return ev_chargers.response_envelope(
+                [], {"comune": comune}, error=f"comune '{comune}' not found"
+            )
         lat, lon = match
 
-    stations = ev_chargers.find_chargers(
+    stations, error = ev_chargers.find_chargers(
         near=(lat, lon), radius_km=radius_km, operator=operator, socket=socket,
         min_power_kw=min_power_kw, free_only=free_only, public_only=public_only,
     )
@@ -231,7 +253,7 @@ def find_chargers(
         query["free"] = True
     if public_only:
         query["public"] = True
-    return ev_chargers.response_envelope(stations, query)
+    return ev_chargers.response_envelope(stations, query, error=error)
 
 
 def main() -> None:

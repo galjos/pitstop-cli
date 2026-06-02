@@ -32,10 +32,67 @@ def _cache_dir() -> Path:
     return d
 
 
+# Common bilingual name mappings for major Italian cities and South Tyrol.
+# MIMIT uses the Italian name but users/agents may use English, French, or
+# German forms. Keyed by normalized uppercase foreign name. Each entry appears
+# once — words shared across languages (e.g. ROME = English + French) are
+# listed once and treated as language-neutral.
+BILINGUAL_MAP = {
+    # South Tyrol / Südtirol (German → Italian)
+    "BOZEN": "BOLZANO",
+    "MERAN": "MERANO",
+    "BRIXEN": "BRESSANONE",
+    "BRUNECK": "BRUNICO",
+    "STERZING": "VIPITENO",
+    "LEIFERS": "LAIVES",
+    "KALTERN": "CALDARO SULLA STRADA DEL VINO",
+    "EPPAN": "APPIANO SULLA STRADA DEL VINO",
+    "NEUMARKT": "EGNA",
+    "ST. ULRICH": "ORTISEI",
+    "ST. CHRISTINA": "SANTA CRISTINA VALGARDENA",
+    "WOLKENSTEIN": "SELVA DI VAL GARDENA",
+    "SCHLANDERS": "SILANDRO",
+    "MALS": "MALLES VENOSTA",
+    "KLAUSEN": "CHIUSA",
+    "NATURNS": "NATURNO",
+    "LATSCH": "LACES",
+    "AUER": "ORA",
+    "PRAD": "PRATO ALLO STELVIO",
+    # Major Italian cities — German forms
+    "ROM": "ROMA",
+    "MAILAND": "MILANO",
+    "VENEDIG": "VENEZIA",
+    "FLORENZ": "FIRENZE",
+    "NEAPEL": "NAPOLI",
+    "GENUA": "GENOVA",
+    "SYRAKUS": "SIRACUSA",
+    # Major Italian cities — English forms
+    "ROME": "ROMA",
+    "MILAN": "MILANO",
+    "VENICE": "VENEZIA",
+    "FLORENCE": "FIRENZE",
+    "TURIN": "TORINO",
+    "NAPLES": "NAPOLI",
+    "GENOA": "GENOVA",
+    "PADUA": "PADOVA",
+    "SYRACUSE": "SIRACUSA",
+    "MANTUA": "MANTOVA",
+    # Major Italian cities — French forms (only the ones that differ from above)
+    "VENISE": "VENEZIA",
+    "GENES": "GENOVA",
+    "PADOUE": "PADOVA",
+    "MANTOUE": "MANTOVA",
+}
+
+
 def normalize_comune(name: str) -> str:
     """Uppercase, trim, collapse internal whitespace. MIMIT uses uppercase
     names; opendatasicilia uses capitalized — uppercase makes both match."""
-    return " ".join(name.strip().upper().split())
+    if not name:
+        return ""
+    n = " ".join(name.strip().upper().split())
+    # Resolve common German names to the Italian names used in MIMIT/ISTAT.
+    return BILINGUAL_MAP.get(n, n)
 
 
 def _cached_path(refresh: bool, max_age: int, timeout: int) -> Path | None:

@@ -40,14 +40,16 @@ def fetch_elements(
     refresh: bool = False,
     max_age: int = DEFAULT_MAX_AGE,
     timeout: int = DEFAULT_TIMEOUT,
-) -> list[dict]:
-    """Run an Overpass QL query and return the parsed `elements` list. Cached
-    on disk by query hash for `max_age` seconds. Empty list on failure with
-    no cache, so callers can degrade gracefully."""
+) -> tuple[list[dict], str | None]:
+    """Run an Overpass QL query and return (elements, error_msg).
+
+    error_msg is None on success, or a string describing the failure.
+    If a failure occurs but a stale cache exists, elements are returned
+    from cache and error_msg is still set."""
     path = _cache_dir() / f"{_cache_key(query)}.json"
     if not refresh and path.exists():
         if max_age <= 0 or (time.time() - path.stat().st_mtime) < max_age:
-            return _read(path)
+            return _read(path), None
 
     req = urllib.request.Request(
         OVERPASS_URL,
@@ -55,19 +57,21 @@ def fetch_elements(
         headers={"User-Agent": "pitstop/0.7 (https://github.com/galjos/pitstop)"},
         method="POST",
     )
+    error = None
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = resp.read()
     except (urllib.error.URLError, OSError) as e:
-        print(f"pitstop: Overpass fetch failed ({e}); "
+        error = str(e)
+        print(f"pitstop: Overpass fetch failed ({error}); "
               f"{'using stale cache' if path.exists() else 'no data available'}",
               file=sys.stderr)
-        return _read(path) if path.exists() else []
+        return (_read(path) if path.exists() else []), error
 
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_bytes(data)
     tmp.replace(path)
-    return _read(path)
+    return _read(path), None
 
 
 def _read(path: Path) -> list[dict]:

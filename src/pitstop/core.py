@@ -58,6 +58,11 @@ class Price:
         return d
 
 
+def navigation_url(lat: float, lon: float) -> str:
+    """Return a Google Maps search URL for the given coordinates."""
+    return f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+
+
 @dataclass
 class Station:
     id: str
@@ -86,6 +91,7 @@ class Station:
             "provincia": self.provincia,
             "lat": self.lat,
             "lon": self.lon,
+            "navigation_url": navigation_url(self.lat, self.lon),
             "prices": [p.to_dict() for p in self.prices],
         }
         if self.distance_km is not None:
@@ -93,6 +99,16 @@ class Station:
         if self.coordinate_suspect:
             d["coordinate_suspect"] = True
         return d
+
+    def to_geojson_feature(self) -> dict:
+        props = self.to_dict()
+        lat = props.pop("lat")
+        lon = props.pop("lon")
+        return {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            "properties": props,
+        }
 
 
 @dataclass
@@ -225,12 +241,12 @@ def filter_prices(
     max_age_days: int = 0,
     today: date | None = None,
 ) -> list[Price]:
-    fuel = fuel.strip().lower()
+    fuels = [f.strip().lower() for f in fuel.split(",") if f.strip()]
     if max_age_days > 0 and today is None:
         today = date.today()
     out = []
     for p in prices:
-        if fuel and fuel not in p.fuel.lower():
+        if fuels and not any(f in p.fuel.lower() for f in fuels):
             continue
         if self_only and not p.self_service:
             continue
@@ -348,27 +364,28 @@ def query_stations(
         st.prices = kept_prices
 
         # Flag coordinates that are implausible or far from where they should be.
-        # Prefer the true ISTAT-derived comune coord when available (works for
-        # single-station comuni); fall back to the in-data comune centroid.
+        # Prefer the data-derived centroid when available (robust if >=3 stations);
+        # fall back to the true ISTAT-derived coord (handles single-station comuni).
+        c = centroids.get(st.comune.upper())
         true_coord = comune_coords.get(st.comune.upper()) if comune_coords else None
+
         if not in_italy(st.lat, st.lon):
             st.coordinate_suspect = True
+        elif c is not None:
+            if haversine_km(c[0], c[1], st.lat, st.lon) > SUSPECT_DISTANCE_KM:
+                st.coordinate_suspect = True
         elif true_coord is not None:
             if haversine_km(true_coord[0], true_coord[1], st.lat, st.lon) > SUSPECT_DISTANCE_KM:
-                st.coordinate_suspect = True
-        else:
-            c = centroids.get(st.comune.upper())
-            if c is not None and haversine_km(c[0], c[1], st.lat, st.lon) > SUSPECT_DISTANCE_KM:
                 st.coordinate_suspect = True
 
         if near is not None:
             if not in_italy(st.lat, st.lon):
                 continue  # invalid coords cannot be reliably near anything
             # Reject stations whose declared comune is geographically too far
-            # from the query point — even if the stored coordinate happens to
-            # land close (the Rasen case). Tolerance pads for large comuni.
-            if true_coord is not None:
-                comune_dist = haversine_km(near[0], near[1], true_coord[0], true_coord[1])
+            # from the query point. Prefer centroid, fall back to true_coord.
+            ref_comune_coord = c or true_coord
+            if ref_comune_coord is not None:
+                comune_dist = haversine_km(near[0], near[1], ref_comune_coord[0], ref_comune_coord[1])
                 if comune_dist > radius_km + 30.0:
                     continue
             d = haversine_km(near[0], near[1], st.lat, st.lon)
@@ -402,6 +419,66 @@ def response_envelope(ds: Dataset, stations: list[Station], query: dict) -> dict
         "stations": [s.to_dict() for s in stations],
         "disclaimer": DISCLAIMER,
     }
+
+
+def geojson_envelope(ds: Dataset, stations: list[Station], query: dict) -> dict:
+    """Build a standard GeoJSON FeatureCollection."""
+    return {
+        "type": "FeatureCollection",
+        "metadata": {
+            "source": SOURCE_NAME,
+            "registry_extraction_date": ds.registry_date,
+            "price_extraction_date": ds.price_date,
+            "generated_at": now_iso(),
+            "query": query,
+            "disclaimer": DISCLAIMER,
+        },
+        "features": [s.to_geojson_feature() for s in stations],
+    }
+
+
+def fuel_stats(ds: Dataset, fuel: str = "") -> dict:
+    """Return median, min, max prices per province and region for each fuel."""
+    fuels = [f.strip().lower() for f in fuel.split(",") if f.strip()]
+    
+    # Fuel -> Province/Region -> list[Price]
+    prov_bucket: dict[str, dict[str, list[float]]] = {}
+    reg_bucket: dict[str, dict[str, list[float]]] = {}
+    
+    # Mapping of province codes to regions (simplified for core advisory)
+    # In a full app we'd use a static lookup, for now we derive from provincia data
+    for st in ds.stations.values():
+        prov = st.provincia.strip().upper()
+        if not prov or len(prov) != 2:
+            continue
+        for p in st.prices:
+            f_key = p.fuel.strip().lower()
+            if fuels and not any(f in f_key for f in fuels):
+                continue
+            prov_bucket.setdefault(p.fuel, {}).setdefault(prov, []).append(p.price)
+            # Use provincia as a proxy for region for now, or just focus on prov
+            
+    out: dict[str, dict] = {}
+    for f_name, prov_data in prov_bucket.items():
+        f_stats = {"provinces": {}}
+        all_prices = []
+        for prov, prices in prov_data.items():
+            all_prices.extend(prices)
+            f_stats["provinces"][prov] = {
+                "median": round(statistics.median(prices), 3),
+                "min": min(prices),
+                "max": max(prices),
+                "count": len(prices),
+            }
+        f_stats["national"] = {
+            "median": round(statistics.median(all_prices), 3),
+            "min": min(all_prices),
+            "max": max(all_prices),
+            "count": len(all_prices),
+        }
+        out[f_name] = f_stats
+        
+    return out
 
 
 ITALY_BBOX = (35.0, 47.6, 6.0, 19.0)  # min_lat, max_lat, min_lon, max_lon

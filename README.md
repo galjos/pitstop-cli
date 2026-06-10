@@ -29,16 +29,19 @@ Unofficial community project. Not affiliated with or endorsed by MIMIT. Fuel dat
 
 Requires Python ≥ 3.10. No third-party runtime dependencies.
 
-Run without installing (with [uv](https://docs.astral.sh/uv/)):
+From PyPI (the package is published as **`pitstop-cli`**; the CLI binary is `pitstop`):
 
 ```bash
-uvx --from . pitstop stations --comune ROMA --fuel Gasolio --cheapest
+pipx install pitstop-cli           # or
+uv tool install pitstop-cli        # or just run on-demand:
+uvx --from pitstop-cli pitstop --help
 ```
 
-Install as a tool:
+For the MCP server (optional extra):
 
 ```bash
-uv tool install .       # or: pipx install .
+pipx install "pitstop-cli[mcp]"
+pitstop-mcp                        # stdio MCP server
 ```
 
 Run from a source checkout during development:
@@ -72,8 +75,8 @@ Every returned price carries `regional_median`, `deviation_pct`, and an `outlier
 For agents that speak MCP, the same data is exposed as tools (`list_fuels`, `find_stations`, `find_cheapest`) over the shared core:
 
 ```bash
-pip install "pitstop[mcp]"   # or: uv tool install "pitstop[mcp]"
-pitstop-mcp                  # stdio MCP server
+pip install "pitstop-cli[mcp]"   # or: uv tool install "pitstop-cli[mcp]"
+pitstop-mcp                      # stdio MCP server
 ```
 
 Example client config entry:

@@ -1,8 +1,15 @@
 # pitstop
 
-`pitstop` is an unofficial, JSON-first command-line tool for **Italian fuel-station prices**, backed by the public **MIMIT _Osservaprezzi Carburanti_** open data. It is built for agents, scripts, and humans that want a stable, deterministic answer to questions like "cheapest diesel near here" instead of scraping a web UI.
+A JSON-first CLI and MCP server for **Italian fuel-station prices** and **EV charging stations**, designed for AI agents, scripts, and humans.
 
-It downloads the official station registry and daily price file, joins them locally, and exposes filter/sort/proximity queries with a compact table or machine-readable JSON.
+Italy publishes per-station fuel prices daily (MIMIT *Osservaprezzi Carburanti* open data) and OpenStreetMap maps every EV charger in the country, but raw access means downloading multi-megabyte CSVs, joining files, sorting through misreports, and translating between Italian comune names and the ones a user actually types. `pitstop` does all of that locally and returns a small, well-formed JSON envelope.
+
+Built for questions like:
+- *"What's the cheapest diesel near Rome right now?"* → `pitstop find_cheapest --fuel Gasolio --near 41.9,12.5`
+- *"Where can I fast-charge my EV in Bolzano?"* → `pitstop chargers --comune Bozen --fast`
+- *"Are these station prices statistically reliable?"* → every price carries a `regional_median`, `deviation_pct`, and `outlier` flag.
+
+International city names work out of the box (`Rome`, `Milan`, `Bozen`, `Mailand`, `Venise`, …).
 
 ## Disclaimer
 

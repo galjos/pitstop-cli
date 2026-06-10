@@ -4,13 +4,38 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pitstop"
-version = "0.9.0"
-description = "Unofficial JSON-first CLI for Italian fuel-station prices (MIMIT Osservaprezzi Carburanti open data)."
+version = "1.0.0"
+description = "JSON-first CLI + MCP server for Italian fuel-station prices and EV charging — MIMIT, OpenStreetMap, ISTAT."
 readme = "README.md"
 requires-python = ">=3.10"
+license = { file = "LICENSE" }
 dependencies = []
 authors = [{ name = "Josef M. Gallmetzer" }]
-keywords = ["fuel", "prices", "italy", "mimit", "carburanti", "cli", "agent"]
+keywords = [
+  "fuel", "prices", "italy", "mimit", "carburanti",
+  "ev", "charging", "openstreetmap",
+  "cli", "agent", "mcp", "llm",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: GIS",
+  "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage      = "https://github.com/galjos/pitstop"
+Repository    = "https://github.com/galjos/pitstop"
+Changelog     = "https://github.com/galjos/pitstop/blob/main/CHANGELOG.md"
+Issues        = "https://github.com/galjos/pitstop/issues"
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.0"]

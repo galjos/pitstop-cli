@@ -1,6 +1,32 @@
 ---
 name: pitstop
-description: Look up Italian fuel-station prices (petrol, diesel, GPL, methane, HVO) by municipality, province, brand, or proximity to a coordinate, and find the cheapest. Backed by MIMIT Osservaprezzi Carburanti official open data. Use for questions like "cheapest diesel near X in Italy" or "fuel stations in <comune>".
+description: Italian fuel-station prices (petrol, diesel, GPL, methane, HVO) and EV charging stations. Find cheapest by municipality / province / brand / coordinate, look up EV chargers near a place, get macro price stats. Backed by MIMIT Osservaprezzi Carburanti, OpenStreetMap (Overpass), and ISTAT comune coordinates. Use for "cheapest diesel near X in Italy", "fuel stations in <comune>", or "EV chargers near <comune>".
+homepage: https://github.com/galjos/pitstop
+metadata:
+  {
+    "openclaw":
+      {
+        "os": ["darwin", "linux"],
+        "requires": { "bins": ["pitstop"] },
+        "install":
+          [
+            {
+              "id": "uvx",
+              "kind": "uvx",
+              "package": "pitstop>=1.0.0",
+              "bins": ["pitstop"],
+              "label": "Run pitstop on demand (uvx)",
+            },
+            {
+              "id": "pipx",
+              "kind": "pipx",
+              "package": "pitstop>=1.0.0",
+              "bins": ["pitstop"],
+              "label": "Install pitstop (pipx)",
+            },
+          ],
+      },
+  }
 ---
 
 # pitstop

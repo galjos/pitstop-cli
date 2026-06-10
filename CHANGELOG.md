@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-06-02
+
+First public release. Nine months of iteration condensed:
+
+- **Italian fuel prices** — MIMIT Osservaprezzi Carburanti, ~23.8k stations,
+  joined daily, four layers of data-quality defense (`--min-price` floor,
+  `--fresh-within-days` freshness, combined 15% + Tukey IQR outlier rule,
+  ISTAT-derived comune-coordinate validation). Cross-validated against
+  MIMIT's own published regional averages and spritpreise.it (South Tyrol)
+  — matches to within ~½ cent across all 21 regions.
+- **EV charging** — OpenStreetMap via Overpass, with operator tariff-page
+  URLs attached per result (per-station €/kWh prices aren't in open data
+  yet; see v0.8.0 notes).
+- **CLI + MCP server** — same core, two surfaces. Five MCP tools:
+  `list_fuels`, `find_stations`, `find_cheapest`, `find_chargers`,
+  `get_stats`.
+- **Agent ergonomics** — multi-fuel queries, international comune names
+  (EN/FR/DE: Rome, Bozen, Mailand, Venise, …), navigation URLs,
+  GeoJSON output, structured Overpass errors.
+- **MIT licensed**, Python ≥3.10, stdlib-only runtime (MCP server needs
+  the optional `[mcp]` extra). 38 tests, GitHub Actions CI.
+
+### Added in 1.0.0 (vs 0.9.0)
+- LICENSE (MIT).
+- PyPI-ready packaging: classifiers, project URLs, license metadata.
+- OpenClaw frontmatter on the agent skill (`metadata.openclaw.requires`
+  + `install` hints for `uvx` and `pipx`) so the skill is publishable
+  to ClawHub-style registries.
+- README intro rewritten for non-Italian audiences.
+
 ## [0.9.0] - 2026-06-02
 
 ### Added
@@ -229,6 +259,8 @@ Initial release.
 - `--fuel` is a substring match, so `Gasolio` also matches variants such as
   `Gasolio Alpino`.
 
+[1.0.0]: https://github.com/galjos/pitstop/releases/tag/v1.0.0
+[0.9.0]: https://github.com/galjos/pitstop/releases/tag/v0.9.0
 [0.8.0]: https://github.com/galjos/pitstop/releases/tag/v0.8.0
 [0.7.0]: https://github.com/galjos/pitstop/releases/tag/v0.7.0
 [0.6.0]: https://github.com/galjos/pitstop/releases/tag/v0.6.0

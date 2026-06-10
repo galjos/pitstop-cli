@@ -1,7 +1,7 @@
 ---
 name: pitstop
 description: Italian fuel-station prices (petrol, diesel, GPL, methane, HVO) and EV charging stations. Find cheapest by municipality / province / brand / coordinate, look up EV chargers near a place, get macro price stats. Backed by MIMIT Osservaprezzi Carburanti, OpenStreetMap (Overpass), and ISTAT comune coordinates. Use for "cheapest diesel near X in Italy", "fuel stations in <comune>", or "EV chargers near <comune>".
-homepage: https://github.com/galjos/pitstop
+homepage: https://github.com/galjos/pitstop-cli
 metadata:
   {
     "openclaw":

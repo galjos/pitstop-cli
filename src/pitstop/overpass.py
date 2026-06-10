@@ -54,7 +54,7 @@ def fetch_elements(
     req = urllib.request.Request(
         OVERPASS_URL,
         data=query.encode("utf-8"),
-        headers={"User-Agent": "pitstop/0.7 (https://github.com/galjos/pitstop)"},
+        headers={"User-Agent": "pitstop/0.7 (https://github.com/galjos/pitstop-cli)"},
         method="POST",
     )
     error = None

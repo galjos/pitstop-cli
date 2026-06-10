@@ -32,10 +32,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage      = "https://github.com/galjos/pitstop"
-Repository    = "https://github.com/galjos/pitstop"
-Changelog     = "https://github.com/galjos/pitstop/blob/main/CHANGELOG.md"
-Issues        = "https://github.com/galjos/pitstop/issues"
+Homepage      = "https://github.com/galjos/pitstop-cli"
+Repository    = "https://github.com/galjos/pitstop-cli"
+Changelog     = "https://github.com/galjos/pitstop-cli/blob/main/CHANGELOG.md"
+Issues        = "https://github.com/galjos/pitstop-cli/issues"
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.0"]

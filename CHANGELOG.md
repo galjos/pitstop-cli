@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-06-10
+
+Metadata-only patch. The 1.0.0 wheel on PyPI was built and uploaded before the
+GitHub repo was renamed `pitstop` → `pitstop-cli`, so its `Project-URL`
+entries (Homepage / Repository / Changelog / Issues) point at the pre-rename
+URLs. PyPI wheels are immutable, so this release supersedes 1.0.0 with
+corrected metadata. No code changes.
+
 ## [1.0.0] - 2026-06-02
 
 First public release. Nine months of iteration condensed:
@@ -259,6 +267,7 @@ Initial release.
 - `--fuel` is a substring match, so `Gasolio` also matches variants such as
   `Gasolio Alpino`.
 
+[1.0.1]: https://github.com/galjos/pitstop-cli/releases/tag/v1.0.1
 [1.0.0]: https://github.com/galjos/pitstop-cli/releases/tag/v1.0.0
 [0.9.0]: https://github.com/galjos/pitstop-cli/releases/tag/v0.9.0
 [0.8.0]: https://github.com/galjos/pitstop-cli/releases/tag/v0.8.0

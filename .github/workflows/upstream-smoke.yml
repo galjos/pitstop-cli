@@ -1,0 +1,71 @@
+name: Upstream smoke
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-data:
+    name: Live data smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: python -m pip install --upgrade pip
+
+      - run: pip install -e ".[mcp]"
+
+      - name: Check fuel prices
+        run: |
+          pitstop stations --comune ROMA --fuel Gasolio --cheapest --min-price 1.2 --fresh-within-days 120 --drop-outliers --limit 3 --json > fuel.json
+          python - <<'PY'
+          import json
+
+          with open("fuel.json", encoding="utf-8") as fh:
+              payload = json.load(fh)
+
+          assert payload["count"] > 0, payload
+          assert payload["source"].startswith("MIMIT"), payload["source"]
+          for station in payload["stations"]:
+              assert station["prices"], station
+              assert station["prices"][0]["price"] >= 1.2, station
+          PY
+
+      - name: Check price statistics
+        run: |
+          pitstop stats --fuel Gasolio --json > stats.json
+          python - <<'PY'
+          import json
+
+          with open("stats.json", encoding="utf-8") as fh:
+              payload = json.load(fh)
+
+          gasolio = payload["stats"]["Gasolio"]
+          assert gasolio["national"]["count"] > 1000, gasolio["national"]
+          assert gasolio["national"]["median"] > 1.0, gasolio["national"]
+          PY
+
+      - name: Check EV charger discovery
+        run: |
+          pitstop chargers --near 46.498,11.354 --radius 8 --fast --limit 5 --json > chargers.json
+          python - <<'PY'
+          import json
+
+          with open("chargers.json", encoding="utf-8") as fh:
+              payload = json.load(fh)
+
+          assert not payload.get("error"), payload.get("error")
+          assert payload["count"] > 0, payload
+          assert payload["source"].startswith("OpenStreetMap"), payload["source"]
+          for station in payload["stations"]:
+              assert station.get("max_power_kw", 0) >= 50, station
+          PY

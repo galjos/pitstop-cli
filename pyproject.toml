@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pitstop-cli"
-version = "1.0.1"
+version = "1.0.2"
 description = "JSON-first CLI + MCP server for Italian fuel-station prices and EV charging — MIMIT, OpenStreetMap, ISTAT."
 readme = "README.md"
 requires-python = ">=3.10"

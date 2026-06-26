@@ -5,7 +5,7 @@ A JSON-first CLI and MCP server for **Italian fuel-station prices** and **EV cha
 Italy publishes per-station fuel prices daily (MIMIT *Osservaprezzi Carburanti* open data) and OpenStreetMap maps every EV charger in the country, but raw access means downloading multi-megabyte CSVs, joining files, sorting through misreports, and translating between Italian comune names and the ones a user actually types. `pitstop` does all of that locally and returns a small, well-formed JSON envelope.
 
 Built for questions like:
-- *"What's the cheapest diesel near Rome right now?"* → `pitstop find_cheapest --fuel Gasolio --near 41.9,12.5`
+- *"What's the cheapest diesel near Rome right now?"* → `pitstop stations --fuel Gasolio --near 41.9,12.5 --cheapest`
 - *"Where can I fast-charge my EV in Bolzano?"* → `pitstop chargers --comune Bozen --fast`
 - *"Are these station prices statistically reliable?"* → every price carries a `regional_median`, `deviation_pct`, and `outlier` flag.
 
@@ -72,7 +72,7 @@ Every returned price carries `regional_median`, `deviation_pct`, and an `outlier
 
 ## MCP server
 
-For agents that speak MCP, the same data is exposed as tools (`list_fuels`, `find_stations`, `find_cheapest`) over the shared core:
+For agents that speak MCP, the same data is exposed as tools (`list_fuels`, `find_stations`, `find_cheapest`, `find_chargers`, `get_stats`) over the shared core:
 
 ```bash
 pip install "pitstop-cli[mcp]"   # or: uv tool install "pitstop-cli[mcp]"
@@ -102,10 +102,10 @@ pytest -q
 
 ## Status & roadmap
 
-v0.9.0 — fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, `--fresh-within-days` freshness, combined 15% + Tukey IQR outlier rule, ISTAT comune-coordinate validation, JSON) + **EV charging stations via OSM Overpass** (operator, plug types, max kW, fee, access — `pitstop chargers`) + **operator tariff-page URLs** attached to each EV result. Includes **multi-fuel query support**, **international municipality mapping** (EN/FR/DE), **macro price statistics** (`pitstop stats`), and **navigation/GeoJSON support**. MCP server, Claude skill, tests, CI.
+v1.0.2 — stable public release: fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, `--fresh-within-days` freshness, combined 15% + Tukey IQR outlier rule, ISTAT comune-coordinate validation, JSON) + **EV charging stations via OSM Overpass** (operator, plug types, max kW, fee, access — `pitstop chargers`) + **operator tariff-page URLs** attached to each EV result. Includes **multi-fuel query support**, **international municipality mapping** (EN/FR/DE), **macro price statistics** (`pitstop stats`), and **navigation/GeoJSON support**. MCP server, agent skill, tests, CI.
 
 Planned, roughly in order:
-- **EV charging** (locations via Open Charge Map; prices via the AFIR National Access Point / DATEX II as that data matures);
+- per-station **EV tariff data** once Italy exposes a documented public API for PUN / AFIR data;
 - additional countries behind a per-country source adapter (e.g. Germany Tankerkönig, France/Spain official feeds).
 
 ## Data sources & attributions

@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-06-26
+
+Documentation/package-description patch. The README status section still
+described the v0.9.0 milestone even though the current public release line is
+1.0.x. This release updates the packaged README to match v1.0.2, corrects a CLI
+example that used an MCP tool name, and lists the full MCP tool surface.
+
 ## [1.0.1] - 2026-06-10
 
 Metadata-only patch. The 1.0.0 wheel on PyPI was built and uploaded before the
@@ -267,6 +274,7 @@ Initial release.
 - `--fuel` is a substring match, so `Gasolio` also matches variants such as
   `Gasolio Alpino`.
 
+[1.0.2]: https://github.com/galjos/pitstop-cli/releases/tag/v1.0.2
 [1.0.1]: https://github.com/galjos/pitstop-cli/releases/tag/v1.0.1
 [1.0.0]: https://github.com/galjos/pitstop-cli/releases/tag/v1.0.0
 [0.9.0]: https://github.com/galjos/pitstop-cli/releases/tag/v0.9.0

@@ -1,5 +1,9 @@
 # pitstop
 
+[![CI](https://github.com/galjos/pitstop-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/galjos/pitstop-cli/actions/workflows/ci.yml)
+[![Release](https://github.com/galjos/pitstop-cli/actions/workflows/release.yml/badge.svg)](https://github.com/galjos/pitstop-cli/actions/workflows/release.yml)
+[![Upstream smoke](https://github.com/galjos/pitstop-cli/actions/workflows/upstream-smoke.yml/badge.svg)](https://github.com/galjos/pitstop-cli/actions/workflows/upstream-smoke.yml)
+
 A JSON-first CLI and MCP server for **Italian fuel-station prices** and **EV charging stations**, designed for AI agents, scripts, and humans.
 
 Italy publishes per-station fuel prices daily (MIMIT *Osservaprezzi Carburanti* open data) and OpenStreetMap maps every EV charger in the country, but raw access means downloading multi-megabyte CSVs, joining files, sorting through misreports, and translating between Italian comune names and the ones a user actually types. `pitstop` does all of that locally and returns a small, well-formed JSON envelope.

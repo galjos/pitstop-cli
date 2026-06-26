@@ -61,11 +61,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$VERSION" dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$VERSION" \
-            --notes "Automated pitstop-cli release for $VERSION." \
-            --verify-tag
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$VERSION" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$VERSION" \
+              --notes "Automated pitstop-cli release for $VERSION."
+            gh release upload "$VERSION" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$VERSION" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$VERSION" \
+              --notes "Automated pitstop-cli release for $VERSION." \
+              --verify-tag
+          fi
 
   publish-pypi:
     name: Publish PyPI package

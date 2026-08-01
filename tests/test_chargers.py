@@ -1,10 +1,26 @@
-import pytest
+import json
 
-from pitstop import chargers
+from pitstop import chargers, overpass
 
 
 def _node(id_, lat, lon, tags):
     return {"type": "node", "id": id_, "lat": lat, "lon": lon, "tags": tags}
+
+
+class _FakeResponse:
+    """Minimal stand-in for the object urlopen() yields as a context manager."""
+
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
 
 
 def test_parse_element_extracts_sockets_power_and_meta():
@@ -147,9 +163,132 @@ def test_geojson_envelope_shape():
     assert "lon" not in feat["properties"]
 
 
+# ---- Overpass soft errors: HTTP 200 + a `remark` is a failure, not "no data" ----
+
+_QUERY = '[out:json];node["amenity"="charging_station"](around:1000,46.5,11.35);out;'
+_TIMEOUT_BODY = json.dumps({
+    "version": 0.6,
+    "elements": [],
+    "remark": "runtime error: Query timed out in 'query' at line 3 after 26 seconds.",
+}).encode("utf-8")
+
+
+def _serve(monkeypatch, tmp_path, body: bytes):
+    """Point the Overpass cache at tmp_path and answer every request with `body`."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    monkeypatch.setattr(overpass.urllib.request, "urlopen",
+                        lambda *a, **k: _FakeResponse(body))
+    return overpass._cache_dir() / f"{overpass._cache_key(_QUERY)}.json"
+
+
+def _good_body(osm_id=1):
+    return json.dumps({
+        "version": 0.6,
+        "elements": [_node(osm_id, 46.50, 11.35,
+                           {"amenity": "charging_station", "operator": "Alperia",
+                            "socket:type2": "1"})],
+    }).encode("utf-8")
+
+
+def test_overpass_error_remark_does_not_overwrite_a_good_cache(monkeypatch, tmp_path):
+    path = _serve(monkeypatch, tmp_path, _TIMEOUT_BODY)
+    path.write_bytes(_good_body())
+
+    elements, error = overpass.fetch_elements(_QUERY, refresh=True)
+
+    assert error is not None and "timed out" in error
+    assert [e["id"] for e in elements] == [1], "stale-but-good cache should be served"
+    assert json.loads(path.read_bytes()) == json.loads(_good_body()), "cache was clobbered"
+
+
+def test_overpass_error_remark_without_cache_reports_error_not_zero_results(monkeypatch, tmp_path):
+    path = _serve(monkeypatch, tmp_path, _TIMEOUT_BODY)
+
+    elements, error = overpass.fetch_elements(_QUERY)
+
+    assert elements == []
+    assert error is not None and "timed out" in error
+    assert not path.exists(), "a failed response must not become the cache"
+    # The count-0 answer must carry the error, so it can't read as "none nearby".
+    env = chargers.response_envelope([], {}, error=error)
+    assert env["count"] == 0 and "timed out" in env["error"]
+
+
+def test_overpass_partial_timeout_body_is_returned_but_not_cached(monkeypatch, tmp_path):
+    """A timed-out query can still return part of its result set. With no cache to
+    fall back on, those elements beat answering "0 chargers" — but the body still
+    must not become the cache, and the error must still be reported."""
+    body = json.dumps({
+        "version": 0.6,
+        "elements": [_node(8, 46.50, 11.35, {"amenity": "charging_station",
+                                             "operator": "Alperia",
+                                             "socket:type2": "1"})],
+        "remark": "runtime error: Query timed out in 'query' at line 3 after 26 seconds.",
+    }).encode("utf-8")
+    path = _serve(monkeypatch, tmp_path, body)
+
+    elements, error = overpass.fetch_elements(_QUERY)
+
+    assert [e["id"] for e in elements] == [8], "partial elements should survive"
+    assert error is not None and "timed out" in error
+    assert not path.exists(), "a failed response must not become the cache"
+
+    # A good cache still wins over a partial failure body.
+    path.write_bytes(_good_body(osm_id=1))
+    cached_elements, error = overpass.fetch_elements(_QUERY, refresh=True)
+    assert [e["id"] for e in cached_elements] == [1]
+    assert error is not None and "timed out" in error
+
+
+def test_overpass_unparseable_body_does_not_overwrite_a_good_cache(monkeypatch, tmp_path):
+    path = _serve(monkeypatch, tmp_path, b"<html>502 Bad Gateway</html>")
+    path.write_bytes(_good_body())
+
+    elements, error = overpass.fetch_elements(_QUERY, refresh=True)
+
+    assert error is not None and "not valid JSON" in error
+    assert [e["id"] for e in elements] == [1]
+    assert json.loads(path.read_bytes()) == json.loads(_good_body())
+
+
+def test_overpass_benign_remark_is_still_cached(monkeypatch, tmp_path):
+    """Only failure wording invalidates a body; Overpass emits benign remarks too."""
+    body = json.dumps({
+        "version": 0.6,
+        "remark": "Note: the data is from www.openstreetmap.org",
+        "elements": [_node(7, 46.50, 11.35, {"amenity": "charging_station"})],
+    }).encode("utf-8")
+    path = _serve(monkeypatch, tmp_path, body)
+
+    elements, error = overpass.fetch_elements(_QUERY)
+
+    assert error is None
+    assert [e["id"] for e in elements] == [7]
+    assert path.exists()
+
+
+def test_find_chargers_surfaces_overpass_remark_error(monkeypatch, tmp_path):
+    _serve(monkeypatch, tmp_path, _TIMEOUT_BODY)
+    stations, error = chargers.find_chargers(near=(46.50, 11.35), radius_km=5)
+    assert stations == []
+    assert error is not None and "timed out" in error
+
+
+def test_cli_chargers_table_reports_the_error(monkeypatch, capsys):
+    """The JSON paths put `error` in the envelope; the table dropped it entirely."""
+    from pitstop import cli
+    monkeypatch.setattr(chargers, "find_chargers",
+                        lambda **kw: ([], "Overpass remark: runtime error: Query timed out"))
+    rc = cli.main(["chargers", "--near", "46.50,11.35"])
+    assert rc == 0
+    assert "timed out" in capsys.readouterr().err
+
+
 def test_mcp_find_chargers_normalizes_bilingual_comune(monkeypatch):
     """MCP path must resolve "Bozen" -> "BOLZANO" like the CLI does."""
-    pytest.importorskip("mcp")  # the [mcp] extra is optional; skip in CI test job
+    # `mcp` ships in the dev extra, so this import is a hard requirement: an
+    # importorskip here would silently pass on an mcp release that dropped
+    # mcp.server.fastmcp, which is exactly how 2.0.0 broke pitstop-mcp.
     from pitstop import mcp_server
     # No real network: serve a small coords table and a fake Overpass response.
     monkeypatch.setattr(

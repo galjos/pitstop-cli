@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pitstop-cli"
-version = "1.0.2"
+version = "1.1.0"
 description = "JSON-first CLI + MCP server for Italian fuel-station prices and EV charging — MIMIT, OpenStreetMap, ISTAT."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -38,8 +38,10 @@ Changelog     = "https://github.com/galjos/pitstop-cli/blob/main/CHANGELOG.md"
 Issues        = "https://github.com/galjos/pitstop-cli/issues"
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.0"]
-dev = ["pytest>=7"]
+# Upper bound is load-bearing: mcp 2.0.0 (2026-07-28) removed mcp.server.fastmcp,
+# which mcp_server.py imports. Lift it only together with that migration.
+mcp = ["mcp>=1.0,<2"]
+dev = ["pytest>=7", "mcp>=1.0,<2"]
 
 [project.scripts]
 pitstop = "pitstop.cli:main"

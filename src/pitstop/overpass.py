@@ -68,10 +68,59 @@ def fetch_elements(
               file=sys.stderr)
         return (_read(path) if path.exists() else []), error
 
+    # Validate before caching. Overpass reports runtime failures as HTTP 200 with
+    # a `remark` in an otherwise well-formed body — usually with no elements, but
+    # a timeout can also cut a partial set; caching either would replace a good
+    # cache and then serve "0 chargers, no error" for max_age.
+    error = _unusable_reason(data)
+    if error is not None:
+        cached = _read(path) if path.exists() else []
+        # With nothing cached to fall back on, whatever the failed body did carry
+        # still beats reporting zero chargers. It is returned, never cached.
+        elements = cached or _elements_of(data)
+        if cached:
+            fallback = "using stale cache"
+        elif elements:
+            fallback = f"returning {len(elements)} partial element(s), not cached"
+        else:
+            fallback = "no data available"
+        print(f"pitstop: Overpass returned no usable data ({error}); {fallback}",
+              file=sys.stderr)
+        return elements, error
+
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_bytes(data)
     tmp.replace(path)
     return _read(path), None
+
+
+# Overpass also emits benign remarks, so match on the failure wording rather than
+# on the mere presence of the key.
+_ERROR_REMARK_MARKERS = ("error", "timed out", "timeout", "out of memory", "exceeded")
+
+
+def _unusable_reason(data: bytes) -> str | None:
+    """Why this response body must not be cached, or None if it is usable."""
+    try:
+        parsed = json.loads(data)
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        return f"response was not valid JSON: {e}"
+    if not isinstance(parsed, dict):
+        return "response was not a JSON object"
+    remark = str(parsed.get("remark", "")).strip()
+    if remark and any(m in remark.lower() for m in _ERROR_REMARK_MARKERS):
+        return f"Overpass remark: {remark}"
+    return None
+
+
+def _elements_of(data: bytes) -> list[dict]:
+    """Elements carried by a response body, or [] if it has none or does not parse."""
+    try:
+        parsed = json.loads(data)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return []
+    elements = parsed.get("elements") if isinstance(parsed, dict) else None
+    return elements if isinstance(elements, list) else []
 
 
 def _read(path: Path) -> list[dict]:

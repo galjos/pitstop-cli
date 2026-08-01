@@ -8,6 +8,7 @@ import csv
 import math
 import os
 import statistics
+import sys
 import time
 import urllib.request
 from dataclasses import dataclass, field
@@ -42,6 +43,9 @@ class Price:
     regional_median: float | None = None
     deviation_pct: float | None = None
     outlier: bool = False
+    # "screened" once a (fuel, provincia) median was available to compare against;
+    # "unscreened" means no median existed (too few samples), so no outlier check ran.
+    median_basis: str = "unscreened"
 
     def to_dict(self) -> dict:
         d = {
@@ -53,6 +57,11 @@ class Price:
         if self.regional_median is not None:
             d["regional_median"] = self.regional_median
             d["deviation_pct"] = self.deviation_pct
+        # Always emitted: without it an unscreened price is indistinguishable
+        # from one that was screened and came out clean (both lack `outlier`).
+        d["median_basis"] = self.median_basis
+        # Only present when true; absence means "not flagged", and median_basis
+        # is what says whether the check ran at all.
         if self.outlier:
             d["outlier"] = True
         return d
@@ -135,13 +144,33 @@ def _cached_file(
         if max_age <= 0 or age < max_age:
             return path
 
-    tmp = path.with_suffix(path.suffix + ".tmp")
     req = urllib.request.Request(url, headers={"User-Agent": "pitstop"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = resp.read()
+
+    # MIMIT answers its maintenance page with HTTP 200, so "the request succeeded"
+    # is not evidence we were served the CSV. Validate before replacing the cache:
+    # otherwise one blip poisons the cache for the whole max_age window.
+    if not _looks_like_mimit_csv(data):
+        if path.exists():
+            print(f"pitstop: {name} download did not look like MIMIT CSV data; "
+                  f"keeping the cached copy", file=sys.stderr)
+            return path
+        raise ValueError(
+            f"{name} download did not look like MIMIT CSV data (expected a first line "
+            f"'Estrazione del ...'); MIMIT may be serving its maintenance page"
+        )
+
+    tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_bytes(data)
     tmp.replace(path)  # atomic; a partial download never clobbers a good cache file
     return path
+
+
+def _looks_like_mimit_csv(data: bytes) -> bool:
+    """Whether a downloaded body is a MIMIT extract rather than an error page."""
+    head = data[:200].decode("utf-8", errors="replace").lstrip()
+    return head.startswith("Estrazione del")
 
 
 def _read_rows(path: Path) -> tuple[str, list[list[str]]]:
@@ -352,6 +381,7 @@ def query_stations(
                 p.deviation_pct = round((p.price - med) / med * 100, 1)
                 p.outlier = (p.deviation_pct < -OUTLIER_DEVIATION_PCT
                              or p.price < s["lower_fence"])
+                p.median_basis = "screened"
             if max_deviation_pct > 0 and s is not None and p.deviation_pct < -max_deviation_pct:
                 continue
             if drop_outliers and p.outlier:
@@ -406,6 +436,28 @@ def query_stations(
     return out
 
 
+def price_quality(stations: list[Station]) -> dict:
+    """Count how many of the returned prices actually went through the outlier
+    check. Thin (fuel, provincia) buckets get no median, so those prices are
+    returned unchecked; without this block that gap is invisible."""
+    screened = unscreened = outliers = 0
+    for st in stations:
+        for p in st.prices:
+            if p.median_basis == "screened":
+                screened += 1
+            else:
+                unscreened += 1
+            if p.outlier:
+                outliers += 1
+    return {
+        "prices": screened + unscreened,
+        "screened": screened,
+        "unscreened": unscreened,
+        "outliers": outliers,
+        "note": QUALITY_NOTE,
+    }
+
+
 def response_envelope(ds: Dataset, stations: list[Station], query: dict) -> dict:
     """Build the stable JSON response object shared by the CLI and MCP server."""
     return {
@@ -416,6 +468,7 @@ def response_envelope(ds: Dataset, stations: list[Station], query: dict) -> dict
         "generated_at": now_iso(),
         "query": query,
         "count": len(stations),
+        "quality": price_quality(stations),
         "stations": [s.to_dict() for s in stations],
         "disclaimer": DISCLAIMER,
     }
@@ -485,6 +538,13 @@ ITALY_BBOX = (35.0, 47.6, 6.0, 19.0)  # min_lat, max_lat, min_lon, max_lon
 SUSPECT_DISTANCE_KM = 30.0
 OUTLIER_DEVIATION_PCT = 15.0  # a price more than this far below its (fuel, provincia) median is flagged
 MIN_SAMPLES_FOR_MEDIAN = 15
+
+QUALITY_NOTE = (
+    "`screened` prices were compared against the median of their (fuel, provincia) "
+    f"bucket; `unscreened` prices sit in a bucket with fewer than {MIN_SAMPLES_FOR_MEDIAN} "
+    "samples, so no median was computed and no outlier check ran on them — they are "
+    "returned as reported. Each price repeats this as `median_basis`."
+)
 
 
 def fuel_provincia_stats(ds: "Dataset", min_n: int = MIN_SAMPLES_FOR_MEDIAN) -> dict[tuple[str, str], dict]:

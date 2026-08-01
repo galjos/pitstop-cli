@@ -13,14 +13,14 @@ metadata:
             {
               "id": "uvx",
               "kind": "uvx",
-              "package": "pitstop-cli>=1.0.2",
+              "package": "pitstop-cli>=1.1.0",
               "bins": ["pitstop"],
               "label": "Run pitstop on demand (uvx)",
             },
             {
               "id": "pipx",
               "kind": "pipx",
-              "package": "pitstop-cli>=1.0.2",
+              "package": "pitstop-cli>=1.1.0",
               "bins": ["pitstop"],
               "label": "Install pitstop (pipx)",
             },
@@ -68,7 +68,7 @@ Key flags:
 
 ## JSON / GeoJSON contract
 
-- `stations --json` returns a stable envelope with `stations[]` and `query`. Each station includes a `navigation_url` (Google Maps).
+- `stations --json` returns a stable envelope with `stations[]`, `query`, and a `quality` block (how many returned prices were screened against a local median). Each station includes a `navigation_url` (Google Maps).
 - `stations --geojson` returns a `FeatureCollection`. Geometry is `Point` [lon, lat]. Properties include all station metadata.
 - `chargers` output includes an `error` field in the envelope when the external Overpass API fails.
 
@@ -77,5 +77,6 @@ Key flags:
 - **Use International Names:** You can pass "Rome" or "Milan" directly to `--comune`; the tool handles the translation to the Italian dataset keys.
 - **Batch Fuel Queries:** To compare Petrol and Diesel, use `--fuel "Benzina,Gasolio"` in a single call.
 - **Surface Maps:** Always include the `navigation_url` in your response so the user can navigate to the station immediately.
-- **Handle Outliers:** Every price carries `regional_median`, `deviation_pct`, and an `outlier` flag (true when >15% below the local median). Use this to warn users about potential data errors in the open feed.
+- **Handle Outliers:** Every price carries a `median_basis`. A `screened` price also carries `regional_median` and `deviation_pct`, plus `outlier: true` when it is >15% below the local median **or** below the Tukey lower fence Q1−1.5·IQR (the Tukey rule catches misreports in tight markets that the percent rule alone misses). The `outlier` key is present **only when it is true**, so read it as optional (`price.get("outlier")`, not `price["outlier"]`): its absence means "not flagged", and `median_basis` is what tells you whether the check ran at all. Use the flag to warn users about potential data errors in the open feed.
+- **Don't over-trust `unscreened` prices:** an `unscreened` price sits in a (fuel, provincia) bucket with too few samples to compute a median, so **no outlier check ran on it** — it is returned exactly as reported. Don't assume a fixed share of the feed is unscreened: the envelope's `quality` block counts `screened` vs `unscreened` for the answer you actually got, so check it there before calling a suspiciously cheap price a bargain.
 - **Check suspect coordinates:** A `coordinate_suspect: true` flag appears when a station's coord is far from its declared comune's centroid. Treat these with low confidence.

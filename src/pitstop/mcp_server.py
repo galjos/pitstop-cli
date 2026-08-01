@@ -17,10 +17,17 @@ _CAVEATS = (
     "price_extraction_date. Italy only. `fuel` supports comma-separated values "
     "(e.g. 'Benzina,Gasolio') and is a substring match. `comune` supports "
     "international names (Rome, Mailand, Venise). Some operators report placeholder "
-    "prices (e.g. 1.000); set min_price (e.g. 1.2) to skip them when ranking. Each "
-    "price carries regional_median, deviation_pct, and an `outlier` flag (true when "
-    ">15% below the fuel's median in that provincia) — use the flag to caveat or "
-    "set max_deviation_pct to silently drop suspect prices."
+    "prices (e.g. 1.000); set min_price (e.g. 1.2) to skip them when ranking. Every "
+    "price carries a `median_basis`: a `screened` price also carries regional_median "
+    "and deviation_pct, plus `outlier: true` when it is >15% below the fuel's median "
+    "in that provincia OR below the Tukey lower fence Q1-1.5*IQR. The `outlier` key "
+    "is present only when it is true, so read it as optional — its absence means "
+    "'not flagged', and `median_basis` is what tells you whether the check ran at "
+    "all. Use the flag to caveat, or set max_deviation_pct to silently drop suspect "
+    "prices. An `unscreened` price sits in a (fuel, provincia) bucket with too few "
+    "samples for a median, so no "
+    "outlier check ran on it — do not present it as verified. The envelope's `quality` "
+    "block counts screened vs unscreened prices for the current answer."
 )
 
 _FIND_STATIONS_DESC = (

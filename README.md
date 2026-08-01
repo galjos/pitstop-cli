@@ -11,7 +11,7 @@ Italy publishes per-station fuel prices daily (MIMIT *Osservaprezzi Carburanti* 
 Built for questions like:
 - *"What's the cheapest diesel near Rome right now?"* → `pitstop stations --fuel Gasolio --near 41.9,12.5 --cheapest`
 - *"Where can I fast-charge my EV in Bolzano?"* → `pitstop chargers --comune Bozen --fast`
-- *"Are these station prices statistically reliable?"* → every price carries a `regional_median`, `deviation_pct`, and `outlier` flag.
+- *"Are these station prices statistically reliable?"* → every price says whether it was screened against its local market, and screened ones carry a `regional_median` and `deviation_pct` (plus `outlier: true` when the price looks like a misreport).
 
 International city names work out of the box (`Rome`, `Milan`, `Bozen`, `Mailand`, `Venise`, …).
 
@@ -72,7 +72,9 @@ pitstop chargers --near 46.498,11.354 --radius 5 --fast --json
 
 `stations` flags: `--comune`, `--provincia`, `--brand`, `--near "lat,lon"`, `--radius`, `--fuel` (substring, case-insensitive), `--self`, `--served`, `--cheapest` (needs `--fuel`), `--min-price` (drop values below a floor; e.g. `1.2` to skip placeholders), `--fresh-within-days` (drop stale prices), `--max-deviation-pct` (drop prices more than N% below their fuel's provincial median — catches misreports), `--no-comune-validate`, `--limit`, `--json`. Loading flags (`--refresh`, `--max-age`, `--timeout`) apply to any data command.
 
-Every returned price carries `regional_median`, `deviation_pct`, and an `outlier` flag (true when >15% below the local median **or** below the Tukey lower fence Q1−1.5·IQR — the Tukey rule catches misreports in tight markets that the percent rule alone misses). Pass `--drop-outliers` to remove flagged prices entirely.
+Every returned price carries a `median_basis`. A `screened` price also carries `regional_median` and `deviation_pct`, plus `outlier: true` when it is >15% below the local median **or** below the Tukey lower fence Q1−1.5·IQR (the Tukey rule catches misreports in tight markets that the percent rule alone misses). The `outlier` key is emitted **only when it is true** — its absence means "not flagged", and `median_basis` is what tells you whether the check ran at all, so read the key as optional. Pass `--drop-outliers` to remove flagged prices entirely.
+
+A price is `unscreened` when its (fuel, provincia) bucket holds fewer than 15 samples: no median could be computed, so **no outlier check ran on it** and it is returned as reported. How much of a given answer that covers depends on the day's feed and the fuels queried — the `--json` envelope's `quality` block counts screened vs unscreened prices for the answer you actually got.
 
 ## MCP server
 
@@ -99,7 +101,7 @@ pytest -q
 ## Automation contract
 
 - `stdout` is command output; `stderr` is diagnostics.
-- `--json` emits a stable object with `source`, `*_extraction_date`, `generated_at`, `query`, `count`, `stations[]`, and `disclaimer`.
+- `--json` emits a stable object with `source`, `*_extraction_date`, `generated_at`, `query`, `count`, `quality`, `stations[]`, and `disclaimer`.
 - Exit codes: `0` success, `1` runtime error, `2` usage error.
 - Source files are cached (default 24h) under `$XDG_CACHE_HOME/pitstop`; use `--refresh` to bypass.
 - Non-interactive; no hidden browser state or scraping.

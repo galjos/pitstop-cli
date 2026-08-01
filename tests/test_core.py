@@ -218,6 +218,58 @@ def test_tukey_fence_catches_borderline_outliers():
     assert "X" not in {s.id for s in out_dropped}
 
 
+def test_outlier_rule_docs_describe_both_halves():
+    """The flag fires on the percent rule OR the Tukey fence. Docs that describe
+    only the percent half make a Tukey-only flag look inexplicable to an agent —
+    including the legend the stations table prints under a flagged row."""
+    from pitstop import cli, mcp_server
+    root = Path(__file__).resolve().parents[1]
+    skill = root / "skills" / "pitstop" / "SKILL.md"
+    readme = root / "README.md"
+    for text, label in ((skill.read_text(encoding="utf-8"), "SKILL.md"),
+                        (readme.read_text(encoding="utf-8"), "README.md"),
+                        (mcp_server._CAVEATS, "mcp_server._CAVEATS"),
+                        (cli._OUTLIER_LEGEND, "cli._OUTLIER_LEGEND")):
+        assert "15%" in text, f"{label} lost the percent half of the outlier rule"
+        assert "Tukey" in text, f"{label} lost the Tukey half of the outlier rule"
+
+
+def test_unscreened_price_is_labelled_and_counted():
+    # Thin bucket: 3 "Metano" prices in RM is below MIN_SAMPLES_FOR_MEDIAN, so no
+    # median exists and no outlier check runs — the price must say so rather than
+    # look like a screened price that came out clean.
+    def st(sid, fuel, price):
+        return core.Station(sid, "", "", "", f"S{sid}", "", "ROMA", "RM", 41.9, 12.5,
+                            [core.Price(fuel, price, True, "2026-05-27T00:00:00")])
+    stations = {str(i): st(str(i), "Gasolio", 2.00) for i in range(15)}
+    for i in range(3):
+        stations[f"M{i}"] = st(f"M{i}", "Metano", 1.50)
+    ds = core.Dataset(stations=stations, registry_date="2026-05-28", price_date="2026-05-28")
+
+    out = core.query_stations(ds, validate_comune=False, limit=0)
+    thick = next(s for s in out if s.id == "0").prices[0]
+    thin = next(s for s in out if s.id == "M0").prices[0]
+
+    assert thick.median_basis == "screened"
+    assert thin.median_basis == "unscreened"
+    assert thin.regional_median is None and thin.outlier is False
+
+    d_thick, d_thin = thick.to_dict(), thin.to_dict()
+    assert d_thick["median_basis"] == "screened"
+    assert d_thin["median_basis"] == "unscreened"
+    # `outlier` is emitted only when true: a screened-and-clean price has no
+    # such key, which is exactly why `median_basis` has to be unconditional.
+    assert "outlier" not in d_thick and "outlier" not in d_thin
+    # Additive only: the pre-existing keys are untouched.
+    assert d_thick["regional_median"] == thick.regional_median
+    assert "regional_median" not in d_thin
+
+    env = core.response_envelope(ds, out, {})
+    assert env["quality"] == {"prices": 18, "screened": 15, "unscreened": 3,
+                              "outliers": 0, "note": core.QUALITY_NOTE}
+    assert str(core.MIN_SAMPLES_FOR_MEDIAN) in env["quality"]["note"]
+
+
 def test_max_deviation_pct_filters_outliers():
     def st(sid, price):
         return core.Station(sid, "", "", "", f"S{sid}", "", "ROMA", "RM", 41.9, 12.5,
@@ -373,3 +425,63 @@ def test_geojson_envelope_shape(registry_path, prices_path):
     # Coordinates must not be duplicated inside properties.
     assert "lat" not in feat["properties"]
     assert "lon" not in feat["properties"]
+
+
+# ---- MIMIT serves its maintenance page with HTTP 200: never cache that ----
+
+_MAINTENANCE_PAGE = b"<!DOCTYPE html>\n<html><body>Servizio non disponibile</body></html>"
+_GOOD_CSV = (
+    b"Estrazione del 2026-07-31\n"
+    b"idImpianto|descCarburante|prezzo|isSelf|dtComu\n"
+    b"1|Benzina|1.999|1|2026-07-30T08:00:00\n"
+)
+
+
+def _serve_body(monkeypatch, tmp_path, body: bytes):
+    """Point the MIMIT cache at tmp_path and answer every download with `body`."""
+    monkeypatch.setattr(core, "cache_dir", lambda: tmp_path)
+
+    class _Resp:
+        def read(self):
+            return body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(core.urllib.request, "urlopen", lambda *a, **k: _Resp())
+
+
+def test_error_page_does_not_clobber_a_good_mimit_cache(monkeypatch, tmp_path):
+    cached = tmp_path / "prezzo_alle_8.csv"
+    cached.write_bytes(_GOOD_CSV)
+    _serve_body(monkeypatch, tmp_path, _MAINTENANCE_PAGE)
+
+    path = core._cached_file(
+        "https://example.test/p.csv", "prezzo_alle_8.csv",
+        refresh=True, max_age=0, timeout=5,
+    )
+    assert path.read_bytes() == _GOOD_CSV, "the maintenance page overwrote the cache"
+
+
+def test_error_page_with_no_cache_raises_rather_than_parsing_html(monkeypatch, tmp_path):
+    _serve_body(monkeypatch, tmp_path, _MAINTENANCE_PAGE)
+
+    with pytest.raises(ValueError, match="maintenance page"):
+        core._cached_file(
+            "https://example.test/p.csv", "prezzo_alle_8.csv",
+            refresh=True, max_age=0, timeout=5,
+        )
+    assert not (tmp_path / "prezzo_alle_8.csv").exists()
+
+
+def test_valid_mimit_download_is_cached(monkeypatch, tmp_path):
+    _serve_body(monkeypatch, tmp_path, _GOOD_CSV)
+
+    path = core._cached_file(
+        "https://example.test/p.csv", "prezzo_alle_8.csv",
+        refresh=True, max_age=0, timeout=5,
+    )
+    assert path.read_bytes() == _GOOD_CSV

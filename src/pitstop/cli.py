@@ -12,6 +12,13 @@ import urllib.error
 from . import core
 from .version import __version__
 
+# Must state both halves of the rule core.query_stations applies, otherwise a
+# Tukey-only flagged row prints a legend that is false for that row.
+_OUTLIER_LEGEND = (
+    "? price >15% below its (fuel, provincia) median, or below that bucket's "
+    "Tukey lower fence (Q1-1.5*IQR) — may be a misreport."
+)
+
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -188,7 +195,7 @@ def _cmd_stations(args) -> int:
         return _print_stations_json(ds, out, query)
     if args.as_geojson:
         return _print_stations_geojson(ds, out, query)
-    return _print_stations_table(out, use_near)
+    return _print_stations_table(ds, out, use_near)
 
 
 def _cmd_stats(args) -> int:
@@ -292,6 +299,10 @@ def _cmd_chargers(args) -> int:
     if args.as_geojson:
         _dump(chargers.geojson_envelope(stations, query, error=error))
         return 0
+    if error:
+        # The JSON paths carry `error` in the envelope; the table would otherwise
+        # show an empty (or stale) result set as if it were a complete answer.
+        print(f"warning: charger data may be incomplete: {error}", file=sys.stderr)
     return _print_chargers_table(stations)
 
 
@@ -323,6 +334,9 @@ def _print_chargers_table(stations) -> int:
     if with_tariff:
         print(f"\n{with_tariff}/{len(stations)} stations have an operator tariff page "
               f"(--json to see `tariff_info_url`). Per-station prices are not in open data.")
+    # ODbL attribution belongs on every surface, not only the JSON envelope.
+    from . import overpass
+    print(f"\nSource: {overpass.SOURCE_NAME}.")
     return 0
 
 
@@ -360,7 +374,7 @@ def _print_stations_geojson(ds: core.Dataset, stations: list[core.Station], quer
     return 0
 
 
-def _print_stations_table(stations: list[core.Station], use_near: bool) -> int:
+def _print_stations_table(ds: core.Dataset, stations: list[core.Station], use_near: bool) -> int:
     any_suspect = False
     any_outlier = False
     rows = []
@@ -396,9 +410,13 @@ def _print_stations_table(stations: list[core.Station], use_near: bool) -> int:
         print(f"\nTop result map: {core.navigation_url(top.lat, top.lon)}")
 
     if any_outlier:
-        print("\n? price >15% below its (fuel, provincia) median — may be a misreport.")
+        print("\n" + _OUTLIER_LEGEND)
     if any_suspect:
         print("* coordinate_suspect: registry coordinate is far from the comune's other stations.")
+    # The --json/--geojson envelopes carry provenance as fields; the table has to
+    # print it, so that redistributing MIMIT data always names its source and age.
+    print(f"\nSource: {core.SOURCE_NAME} — prices extracted {ds.price_date}, "
+          f"registry {ds.registry_date}.")
     return 0
 
 

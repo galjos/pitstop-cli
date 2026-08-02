@@ -70,11 +70,11 @@ pitstop fuels
 pitstop chargers --near 46.498,11.354 --radius 5 --fast --json
 ```
 
-`stations` flags: `--comune`, `--provincia`, `--brand`, `--near "lat,lon"`, `--radius`, `--fuel` (substring, case-insensitive), `--self`, `--served`, `--cheapest` (needs `--fuel`), `--min-price` (drop values below a floor; e.g. `1.2` to skip placeholders), `--fresh-within-days` (drop stale prices), `--max-deviation-pct` (drop prices more than N% below their fuel's provincial median — catches misreports), `--no-comune-validate`, `--limit`, `--json`. Loading flags (`--refresh`, `--max-age`, `--timeout`) apply to any data command.
+`stations` flags: `--comune`, `--provincia`, `--brand`, `--near "lat,lon"`, `--radius`, `--fuel` (substring, case-insensitive), `--self`, `--served`, `--cheapest` (needs `--fuel`), `--min-price` (drop values below a floor; e.g. `1.2` to skip placeholders), `--fresh-within-days` (drop stale prices), `--max-deviation-pct` (drop prices more than N% below their fuel's provincial median — catches misreports), `--no-comune-validate`, `--limit`, `--json`. Loading flags (`--refresh`, `--max-age`, `--timeout`) apply to the MIMIT data commands (`stations`, `fuels`, `stats`); `chargers` uses its own OSM cache and takes only `--refresh`.
 
 Every returned price carries a `median_basis`. A `screened` price also carries `regional_median` and `deviation_pct`, plus `outlier: true` when it is >15% below the local median **or** below the Tukey lower fence Q1−1.5·IQR (the Tukey rule catches misreports in tight markets that the percent rule alone misses). The `outlier` key is emitted **only when it is true** — its absence means "not flagged", and `median_basis` is what tells you whether the check ran at all, so read the key as optional. Pass `--drop-outliers` to remove flagged prices entirely.
 
-A price is `unscreened` when its (fuel, provincia) bucket holds fewer than 15 samples: no median could be computed, so **no outlier check ran on it** and it is returned as reported. How much of a given answer that covers depends on the day's feed and the fuels queried — the `--json` envelope's `quality` block counts screened vs unscreened prices for the answer you actually got.
+A price is `unscreened` when its (fuel, provincia) bucket holds too few samples for a median: none could be computed, so **no outlier check ran on it** and it is returned as reported (the table marks such prices `~`). How much of a given answer that covers depends on the day's feed and the fuels queried — the `--json` envelope's `quality` block counts screened vs unscreened prices for the answer you actually got.
 
 ## MCP server
 
@@ -111,8 +111,8 @@ pytest -q
 v1.0.2 — stable public release: fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, `--fresh-within-days` freshness, combined 15% + Tukey IQR outlier rule, ISTAT comune-coordinate validation, JSON) + **EV charging stations via OSM Overpass** (operator, plug types, max kW, fee, access — `pitstop chargers`) + **operator tariff-page URLs** attached to each EV result. Includes **multi-fuel query support**, **international municipality mapping** (EN/FR/DE), **macro price statistics** (`pitstop stats`), and **navigation/GeoJSON support**. MCP server, agent skill, tests, CI.
 
 Planned, roughly in order:
-- per-station **EV tariff data** once Italy exposes a documented public API for PUN / AFIR data;
-- additional countries behind a per-country source adapter (e.g. Germany Tankerkönig, France/Spain official feeds).
+- per-station **EV tariff data** if a source `pitstop` can read starts publishing per-kWh prices (today it parses only OSM's `fee` yes/no flag, no price field);
+- additional countries behind a per-country source adapter, added only where the source's own terms permit the bulk download and locally derived ranking `pitstop` does — evaluated per country before any adapter is written.
 
 ## Data sources & attributions
 

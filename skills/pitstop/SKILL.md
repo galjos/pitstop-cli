@@ -40,7 +40,7 @@ metadata:
 - Comparing self-service vs served prices, or brands, for Italian stations
 - Finding EV chargers near a coordinate or municipality (OSM)
 
-Do **not** use the *fuel* commands for: live/intraday prices (this is daily data) or countries other than Italy. **For EV charging**, use `pitstop chargers` / MCP `find_chargers` — separate domain backed by OpenStreetMap. **Per-station €/kWh tariffs are NOT in open data in Italy**; each charger result includes a `tariff_info_url` linking to the operator's official tariff page — surface that to the user instead of guessing a price.
+Do **not** use the *fuel* commands for: live/intraday prices (this is daily data) or countries other than Italy. **For EV charging**, use `pitstop chargers` / MCP `find_chargers` — separate domain backed by OpenStreetMap. **Per-station €/kWh tariffs are never returned by `pitstop chargers` / MCP `find_chargers`** (it parses OSM's `fee` yes/no flag and no price field); each charger result includes a `tariff_info_url` linking to the operator's official tariff page — surface that to the user instead of guessing a price.
 
 ## Commands
 

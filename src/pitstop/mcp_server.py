@@ -206,11 +206,10 @@ _FIND_CHARGERS_DESC = (
     "max-power kW, free-only, and public-access-only. Returns a JSON envelope "
     "with operator, plug types, max kW, fee, access, distance, and (when the "
     "operator is recognized) a `tariff_info_url` pointing to the operator's "
-    "official tariff page. **Per-station €/kWh tariffs are not in this dataset** "
-    "— as of mid-2026 they are not openly machine-readable in Italy (AFIR DATEX "
-    "II is upload-only; Chargeprice/Eco-Movement are paid). When a user asks "
-    "about price, surface the `tariff_info_url` for the relevant operator(s) "
-    "rather than guessing a price."
+    "official tariff page. **Per-station €/kWh tariffs are never returned by this "
+    "tool**: it parses OpenStreetMap's `fee` yes/no flag and no price field. When a "
+    "user asks about price, surface the `tariff_info_url` for the relevant "
+    "operator(s) rather than guessing a price."
 )
 
 

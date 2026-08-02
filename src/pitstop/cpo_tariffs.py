@@ -1,17 +1,10 @@
 """Curated registry of Italian EV charge-point operators (CPOs) → their
 official tariff pages.
 
-**Why this exists instead of per-station prices.** As of mid-2026:
-- AFIR DATEX II is a CPO→NAP upload channel, not a consumer query API.
-- Italy's PUN (piattaformaunicanazionale.it) is an ArcGIS SPA with no
-  documented public tariff endpoint.
-- Chargeprice and Eco-Movement carry per-station tariffs but require paid
-  licenses.
-- OSM tags `fee=yes/no` but not actual €/kWh.
-
-So real per-station prices aren't free + open + machine-readable yet. The
-honest thing pitstop can do today is surface the **operator's own tariff page**
-so the agent / user can read authoritative numbers in one click."""
+**Why this exists instead of per-station prices.** pitstop parses OSM's `fee`
+yes/no flag and no price field, so it has no per-kWh number to report. Rather
+than guess one, it surfaces the **operator's own tariff page**, where the agent
+or user can read authoritative numbers in one click."""
 
 from __future__ import annotations
 

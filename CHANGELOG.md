@@ -47,6 +47,13 @@ Correctness and honesty release. Every change here closes a gap between what
   reports the real figure for the answer actually returned.
 - Table output now prints its source and extraction dates, so the README's
   provenance promise holds on every surface rather than only in `--json`.
+- The stations table now marks an unscreened price `~` with a legend, so the
+  screening signal is no longer JSON-only and a suspiciously cheap row in a
+  thin bucket does not look checked when it isn't.
+- EV tariff wording now describes what `pitstop` parses (OSM's `fee` yes/no
+  flag, no price field) rather than asserting what OpenStreetMap contains —
+  some OSM nodes do carry a free-text `charge` tag, so the old phrasing was
+  contradicted by pitstop's own cached data. A test pins the wording.
 
 ### Added
 

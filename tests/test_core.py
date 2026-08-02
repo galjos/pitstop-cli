@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from pathlib import Path
 
@@ -221,17 +222,33 @@ def test_tukey_fence_catches_borderline_outliers():
 def test_outlier_rule_docs_describe_both_halves():
     """The flag fires on the percent rule OR the Tukey fence. Docs that describe
     only the percent half make a Tukey-only flag look inexplicable to an agent —
-    including the legend the stations table prints under a flagged row."""
+    including the legend the stations table prints under a flagged row. The
+    unscreened surfaces get the same guard: they must keep saying the check did
+    not run, and none of them may restate MIN_SAMPLES_FOR_MEDIAN, which only
+    core.QUALITY_NOTE is allowed to spell out (by interpolating it)."""
     from pitstop import cli, mcp_server
     root = Path(__file__).resolve().parents[1]
-    skill = root / "skills" / "pitstop" / "SKILL.md"
-    readme = root / "README.md"
-    for text, label in ((skill.read_text(encoding="utf-8"), "SKILL.md"),
-                        (readme.read_text(encoding="utf-8"), "README.md"),
+    skill = (root / "skills" / "pitstop" / "SKILL.md").read_text(encoding="utf-8")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    for text, label in ((skill, "SKILL.md"),
+                        (readme, "README.md"),
                         (mcp_server._CAVEATS, "mcp_server._CAVEATS"),
                         (cli._OUTLIER_LEGEND, "cli._OUTLIER_LEGEND")):
         assert "15%" in text, f"{label} lost the percent half of the outlier rule"
         assert "Tukey" in text, f"{label} lost the Tukey half of the outlier rule"
+
+    for text, label in ((skill, "SKILL.md"),
+                        (readme, "README.md"),
+                        (mcp_server._CAVEATS, "mcp_server._CAVEATS"),
+                        (cli._UNSCREENED_LEGEND, "cli._UNSCREENED_LEGEND"),
+                        (core.QUALITY_NOTE, "core.QUALITY_NOTE")):
+        assert "no outlier check ran" in text, \
+            f"{label} stopped saying that no outlier check ran on unscreened prices"
+        if label == "core.QUALITY_NOTE":
+            assert str(core.MIN_SAMPLES_FOR_MEDIAN) in text
+            continue
+        assert not re.search(r"\b\d+ samples", text), \
+            f"{label} hardcodes the sample threshold instead of leaving it to core"
 
 
 def test_unscreened_price_is_labelled_and_counted():
@@ -268,6 +285,30 @@ def test_unscreened_price_is_labelled_and_counted():
     assert env["quality"] == {"prices": 18, "screened": 15, "unscreened": 3,
                               "outliers": 0, "note": core.QUALITY_NOTE}
     assert str(core.MIN_SAMPLES_FOR_MEDIAN) in env["quality"]["note"]
+
+
+def test_table_marks_unscreened_prices(capsys):
+    """`median_basis` was JSON-only: the table printed an unscreened price exactly
+    like a screened-and-clean one, so a suspiciously cheap row looked checked."""
+    from pitstop import cli
+
+    def st(sid, fuel, price):
+        return core.Station(sid, "", "", "", f"S{sid}", "", "ROMA", "RM", 41.9, 12.5,
+                            [core.Price(fuel, price, True, "2026-05-27T00:00:00")])
+    stations = {str(i): st(str(i), "Gasolio", 2.00) for i in range(15)}
+    stations["M"] = st("M", "Metano", 1.50)  # thin bucket -> unscreened
+    ds = core.Dataset(stations=stations, registry_date="2026-05-28", price_date="2026-05-28")
+    out = core.query_stations(ds, validate_comune=False, limit=0)
+
+    cli._print_stations_table(ds, out, False)
+    text = capsys.readouterr().out
+    assert "1.500 ~" in next(l for l in text.splitlines() if "Metano" in l)
+    assert "2.000 ~" not in next(l for l in text.splitlines() if "Gasolio" in l)
+    assert cli._UNSCREENED_LEGEND in text
+
+    # The legend is conditional: an all-screened answer must not print it.
+    cli._print_stations_table(ds, [s for s in out if s.id != "M"], False)
+    assert cli._UNSCREENED_LEGEND not in capsys.readouterr().out
 
 
 def test_max_deviation_pct_filters_outliers():
@@ -485,3 +526,33 @@ def test_valid_mimit_download_is_cached(monkeypatch, tmp_path):
         refresh=True, max_age=0, timeout=5,
     )
     assert path.read_bytes() == _GOOD_CSV
+
+
+def test_ev_tariff_docs_claim_only_what_pitstop_parses():
+    """pitstop must describe its own parser, not OpenStreetMap's contents.
+
+    Some OSM nodes really do carry a free-text `charge` tag (observed in cached
+    Overpass responses: "0.6€/kWh", "0.85€/kWh"), so any wording that says the
+    tags "carry only fee yes/no" is false. The verifiable claim is that pitstop
+    reads `fee` and no price field. This also pins the dated, world-asserting
+    survey wording ("as of mid-2026", AFIR, Chargeprice, Eco-Movement) out of
+    every shipped surface.
+    """
+    from pitstop import chargers, cli, cpo_tariffs, mcp_server
+    root = Path(__file__).resolve().parents[1]
+    surfaces = {
+        "SKILL.md": (root / "skills" / "pitstop" / "SKILL.md").read_text(encoding="utf-8"),
+        "README.md": (root / "README.md").read_text(encoding="utf-8"),
+        "mcp_server._FIND_CHARGERS_DESC": mcp_server._FIND_CHARGERS_DESC,
+        "chargers disclaimer": chargers.response_envelope([], {})["disclaimer"],
+        "chargers.__doc__": chargers.__doc__,
+        "cpo_tariffs.__doc__": cpo_tariffs.__doc__,
+        "cli.__doc__": cli.__doc__ or "",
+    }
+    banned = ("carry only `fee`", "carry only fee", "as of mid-2026",
+              "AFIR", "Chargeprice", "Eco-Movement")
+    for label, text in surfaces.items():
+        for phrase in banned:
+            assert phrase not in text, (
+                f"{label} reintroduced an unverifiable claim about the outside world: {phrase!r}"
+            )

@@ -1,9 +1,10 @@
 """EV charging-station discovery via OpenStreetMap's Overpass API.
 
-Italian EV pricing isn't published openly in a usable form yet (the AFIR
-National Access Point/DATEX II rollout is still maturing), so this module
-focuses on **locations + capability** — operator, plug types, max kW, fee,
-access — which is what most "where can I charge near X" questions need."""
+This module parses OSM's `fee` yes/no flag and no price field, so it focuses on
+**locations + capability** — operator, plug types, max kW, fee, access — which
+is what most "where can I charge near X" questions need. (A few OSM nodes do
+carry a `charge` tag, but it is free text entered by mappers and unvalidated,
+so pitstop does not read it and never reports a per-kWh price.)"""
 
 from __future__ import annotations
 
@@ -248,11 +249,10 @@ def response_envelope(stations: list[EvStation], query: dict, error: str | None 
             "(© OpenStreetMap contributors, ODbL). Coverage and freshness vary. "
             "Power, plug types, and access fields reflect what mappers entered — "
             "verify on-site or via the operator before relying on them. "
-            "Per-station tariffs are NOT in this dataset: as of mid-2026 they are "
-            "not openly available in Italy (AFIR DATEX II is upload-only; "
-            "commercial APIs like Chargeprice/Eco-Movement carry them). The "
-            "`tariff_info_url` field on each station, when present, links to the "
-            "operator's own official tariff page."
+            "Per-station tariffs are NOT returned here: pitstop parses OpenStreetMap's "
+            "`fee` yes/no flag and no price field, so any per-kWh figure a mapper typed "
+            "into OSM is neither read nor validated. The `tariff_info_url` field on each "
+            "station, when present, links to the operator's own official tariff page."
         ),
     }
     if error:

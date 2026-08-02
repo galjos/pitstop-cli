@@ -19,6 +19,14 @@ _OUTLIER_LEGEND = (
     "Tukey lower fence (Q1-1.5*IQR) — may be a misreport."
 )
 
+# Without this mark an unscreened price is printed exactly like a screened one
+# that came out clean, so a suspiciously cheap row looks checked when it isn't.
+# Only the --json path carried `median_basis`; the table now says it too.
+_UNSCREENED_LEGEND = (
+    "~ price is unscreened: its (fuel, provincia) bucket held too few samples "
+    "for a median, so no outlier check ran on it — it is shown as reported."
+)
+
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -333,7 +341,12 @@ def _print_chargers_table(stations) -> int:
     with_tariff = sum(1 for s in stations if s.tariff_info_url)
     if with_tariff:
         print(f"\n{with_tariff}/{len(stations)} stations have an operator tariff page "
-              f"(--json to see `tariff_info_url`). Per-station prices are not in open data.")
+              f"(--json to see `tariff_info_url`).")
+    # Unconditional: the row least likely to have a tariff link is an unrecognized
+    # operator, which is exactly where a reader most needs telling that the FEE
+    # column is a yes/no flag and not a price.
+    if stations:
+        print("\nThis table reports OSM's fee yes/no flag; pitstop never reports a price per kWh.")
     # ODbL attribution belongs on every surface, not only the JSON envelope.
     from . import overpass
     print(f"\nSource: {overpass.SOURCE_NAME}.")
@@ -377,6 +390,7 @@ def _print_stations_geojson(ds: core.Dataset, stations: list[core.Station], quer
 def _print_stations_table(ds: core.Dataset, stations: list[core.Station], use_near: bool) -> int:
     any_suspect = False
     any_outlier = False
+    any_unscreened = False
     rows = []
     for st in stations:
         prices = st.prices or [None]
@@ -386,10 +400,17 @@ def _print_stations_table(ds: core.Dataset, stations: list[core.Station], use_ne
             if p is None:
                 price = ""
             else:
-                outlier_mark = " ?" if p.outlier else ""
-                price = f"{p.price:.3f}{outlier_mark}"
+                # Mutually exclusive by construction: `outlier` can only be set
+                # once a median existed, which is what `unscreened` says it did not.
                 if p.outlier:
+                    mark = " ?"
                     any_outlier = True
+                elif p.median_basis == "unscreened":
+                    mark = " ~"
+                    any_unscreened = True
+                else:
+                    mark = ""
+                price = f"{p.price:.3f}{mark}"
             updated = "" if p is None else (p.updated[:10])
             name = st.name + (" *" if st.coordinate_suspect else "")
             if st.coordinate_suspect:
@@ -409,8 +430,10 @@ def _print_stations_table(ds: core.Dataset, stations: list[core.Station], use_ne
         top = stations[0]
         print(f"\nTop result map: {core.navigation_url(top.lat, top.lon)}")
 
-    if any_outlier:
-        print("\n" + _OUTLIER_LEGEND)
+    legends = ([_OUTLIER_LEGEND] if any_outlier else []) + \
+              ([_UNSCREENED_LEGEND] if any_unscreened else [])
+    if legends:
+        print("\n" + "\n".join(legends))
     if any_suspect:
         print("* coordinate_suspect: registry coordinate is far from the comune's other stations.")
     # The --json/--geojson envelopes carry provenance as fields; the table has to

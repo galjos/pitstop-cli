@@ -1,10 +1,9 @@
 """EV charging-station discovery via OpenStreetMap's Overpass API.
 
-This module parses OSM's `fee` yes/no flag and no price field, so it focuses on
-**locations + capability** — operator, plug types, max kW, fee, access — which
-is what most "where can I charge near X" questions need. (A few OSM nodes do
-carry a `charge` tag, but it is free text entered by mappers and unvalidated,
-so pitstop does not read it and never reports a per-kWh price.)"""
+Covers **locations + capability** — operator, plug types, max kW, fee, access —
+which is what most "where can I charge near X" questions need. Only OSM's `fee`
+yes/no flag is parsed, no price field: some nodes do carry a `charge` tag, but
+it is unvalidated free text, so pitstop never reports a per-kWh price."""
 
 from __future__ import annotations
 
@@ -13,7 +12,7 @@ import re
 from dataclasses import dataclass, field
 
 from . import core, cpo_tariffs, overpass
-from .core import haversine_km, in_italy, now_iso
+from .core import haversine_km, now_iso
 
 # Map OSM `socket:<key>` to a human-readable plug name.
 _SOCKET_TYPES = {
@@ -202,10 +201,7 @@ def find_chargers(
 ) -> tuple[list[EvStation], str | None]:
     """Fetch and filter EV charging stations from OSM around a point.
     Returns (stations, error_msg)."""
-    if not in_italy(near[0], near[1]):
-        # Allow queries anywhere — pitstop's Italy bbox is for the fuel data; for
-        # OSM EV the user can query elsewhere if they want. Just don't bail.
-        pass
+    # No Italy bbox check: that bound is for the fuel data, OSM EV lookups are not.
     radius_m = int(max(100, radius_km * 1000))
     elements, error = overpass.fetch_elements(_overpass_query(near[0], near[1], radius_m),
                                                refresh=refresh)

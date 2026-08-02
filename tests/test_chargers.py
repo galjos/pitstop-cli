@@ -215,9 +215,8 @@ def test_overpass_error_remark_without_cache_reports_error_not_zero_results(monk
 
 
 def test_overpass_partial_timeout_body_is_returned_but_not_cached(monkeypatch, tmp_path):
-    """A timed-out query can still return part of its result set. With no cache to
-    fall back on, those elements beat answering "0 chargers" — but the body still
-    must not become the cache, and the error must still be reported."""
+    """A timed-out query can still return part of its result set: with no cache to
+    fall back on those elements are served, but the body must not become the cache."""
     body = json.dumps({
         "version": 0.6,
         "elements": [_node(8, 46.50, 11.35, {"amenity": "charging_station",
@@ -275,7 +274,7 @@ def test_find_chargers_surfaces_overpass_remark_error(monkeypatch, tmp_path):
 
 
 def test_cli_chargers_table_reports_the_error(monkeypatch, capsys):
-    """The JSON paths put `error` in the envelope; the table dropped it entirely."""
+    """The table path has no `error` field, so it must warn on stderr."""
     from pitstop import cli
     monkeypatch.setattr(chargers, "find_chargers",
                         lambda **kw: ([], "Overpass remark: runtime error: Query timed out"))
@@ -286,9 +285,8 @@ def test_cli_chargers_table_reports_the_error(monkeypatch, capsys):
 
 def test_mcp_find_chargers_normalizes_bilingual_comune(monkeypatch):
     """MCP path must resolve "Bozen" -> "BOLZANO" like the CLI does."""
-    # `mcp` ships in the dev extra, so this import is a hard requirement: an
-    # importorskip here would silently pass on an mcp release that dropped
-    # mcp.server.fastmcp, which is exactly how 2.0.0 broke pitstop-mcp.
+    # No importorskip: `mcp` is in the dev extra, so this import must be a hard
+    # requirement — a skip would silently pass on an mcp that dropped fastmcp.
     from pitstop import mcp_server
     # No real network: serve a small coords table and a fake Overpass response.
     monkeypatch.setattr(

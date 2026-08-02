@@ -12,16 +12,14 @@ import urllib.error
 from . import core
 from .version import __version__
 
-# Must state both halves of the rule core.query_stations applies, otherwise a
-# Tukey-only flagged row prints a legend that is false for that row.
+# Must state both halves of the rule core.query_stations applies, or a Tukey-only
+# flagged row prints a legend that is false for that row.
 _OUTLIER_LEGEND = (
     "? price >15% below its (fuel, provincia) median, or below that bucket's "
     "Tukey lower fence (Q1-1.5*IQR) — may be a misreport."
 )
 
-# Without this mark an unscreened price is printed exactly like a screened one
-# that came out clean, so a suspiciously cheap row looks checked when it isn't.
-# Only the --json path carried `median_basis`; the table now says it too.
+# Without this mark an unscreened price prints exactly like a screened-and-clean one.
 _UNSCREENED_LEGEND = (
     "~ price is unscreened: its (fuel, provincia) bucket held too few samples "
     "for a median, so no outlier check ran on it — it is shown as reported."
@@ -308,8 +306,8 @@ def _cmd_chargers(args) -> int:
         _dump(chargers.geojson_envelope(stations, query, error=error))
         return 0
     if error:
-        # The JSON paths carry `error` in the envelope; the table would otherwise
-        # show an empty (or stale) result set as if it were a complete answer.
+        # The JSON paths carry `error` in the envelope; the table has nowhere to
+        # put it, so an empty or stale result set would look like a complete one.
         print(f"warning: charger data may be incomplete: {error}", file=sys.stderr)
     return _print_chargers_table(stations)
 
@@ -342,9 +340,9 @@ def _print_chargers_table(stations) -> int:
     if with_tariff:
         print(f"\n{with_tariff}/{len(stations)} stations have an operator tariff page "
               f"(--json to see `tariff_info_url`).")
-    # Unconditional: the row least likely to have a tariff link is an unrecognized
-    # operator, which is exactly where a reader most needs telling that the FEE
-    # column is a yes/no flag and not a price.
+    # Unconditional: the rows least likely to carry a tariff link are those with an
+    # unrecognized operator, which is where a reader most needs telling that FEE is
+    # a flag and not a price.
     if stations:
         print("\nThis table reports OSM's fee yes/no flag; pitstop never reports a price per kWh.")
     # ODbL attribution belongs on every surface, not only the JSON envelope.
@@ -436,8 +434,7 @@ def _print_stations_table(ds: core.Dataset, stations: list[core.Station], use_ne
         print("\n" + "\n".join(legends))
     if any_suspect:
         print("* coordinate_suspect: registry coordinate is far from the comune's other stations.")
-    # The --json/--geojson envelopes carry provenance as fields; the table has to
-    # print it, so that redistributing MIMIT data always names its source and age.
+    # Every surface must name MIMIT and the data's age; --json carries it as fields.
     print(f"\nSource: {core.SOURCE_NAME} — prices extracted {ds.price_date}, "
           f"registry {ds.registry_date}.")
     return 0

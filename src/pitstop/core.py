@@ -57,11 +57,9 @@ class Price:
         if self.regional_median is not None:
             d["regional_median"] = self.regional_median
             d["deviation_pct"] = self.deviation_pct
-        # Always emitted: without it an unscreened price is indistinguishable
-        # from one that was screened and came out clean (both lack `outlier`).
+        # Unconditional: an unscreened price and a screened-and-clean one both
+        # lack `outlier`, so only this distinguishes them.
         d["median_basis"] = self.median_basis
-        # Only present when true; absence means "not flagged", and median_basis
-        # is what says whether the check ran at all.
         if self.outlier:
             d["outlier"] = True
         return d
@@ -148,9 +146,8 @@ def _cached_file(
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = resp.read()
 
-    # MIMIT answers its maintenance page with HTTP 200, so "the request succeeded"
-    # is not evidence we were served the CSV. Validate before replacing the cache:
-    # otherwise one blip poisons the cache for the whole max_age window.
+    # MIMIT serves its maintenance page with HTTP 200, so a successful request is
+    # not evidence we got the CSV. Caching one blip poisons the whole max_age window.
     if not _looks_like_mimit_csv(data):
         if path.exists():
             print(f"pitstop: {name} download did not look like MIMIT CSV data; "
@@ -437,9 +434,8 @@ def query_stations(
 
 
 def price_quality(stations: list[Station]) -> dict:
-    """Count how many of the returned prices actually went through the outlier
-    check. Thin (fuel, provincia) buckets get no median, so those prices are
-    returned unchecked; without this block that gap is invisible."""
+    """Count how many returned prices went through the outlier check. Thin
+    (fuel, provincia) buckets get no median, so those prices are unchecked."""
     screened = unscreened = outliers = 0
     for st in stations:
         for p in st.prices:
@@ -491,15 +487,11 @@ def geojson_envelope(ds: Dataset, stations: list[Station], query: dict) -> dict:
 
 
 def fuel_stats(ds: Dataset, fuel: str = "") -> dict:
-    """Return median, min, max prices per province and region for each fuel."""
+    """Return median, min, max prices per province for each fuel."""
     fuels = [f.strip().lower() for f in fuel.split(",") if f.strip()]
-    
-    # Fuel -> Province/Region -> list[Price]
+
+    # Fuel -> provincia -> prices
     prov_bucket: dict[str, dict[str, list[float]]] = {}
-    reg_bucket: dict[str, dict[str, list[float]]] = {}
-    
-    # Mapping of province codes to regions (simplified for core advisory)
-    # In a full app we'd use a static lookup, for now we derive from provincia data
     for st in ds.stations.values():
         prov = st.provincia.strip().upper()
         if not prov or len(prov) != 2:
@@ -509,8 +501,7 @@ def fuel_stats(ds: Dataset, fuel: str = "") -> dict:
             if fuels and not any(f in f_key for f in fuels):
                 continue
             prov_bucket.setdefault(p.fuel, {}).setdefault(prov, []).append(p.price)
-            # Use provincia as a proxy for region for now, or just focus on prov
-            
+
     out: dict[str, dict] = {}
     for f_name, prov_data in prov_bucket.items():
         f_stats = {"provinces": {}}

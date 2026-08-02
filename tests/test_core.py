@@ -220,12 +220,9 @@ def test_tukey_fence_catches_borderline_outliers():
 
 
 def test_outlier_rule_docs_describe_both_halves():
-    """The flag fires on the percent rule OR the Tukey fence. Docs that describe
-    only the percent half make a Tukey-only flag look inexplicable to an agent —
-    including the legend the stations table prints under a flagged row. The
-    unscreened surfaces get the same guard: they must keep saying the check did
-    not run, and none of them may restate MIN_SAMPLES_FOR_MEDIAN, which only
-    core.QUALITY_NOTE is allowed to spell out (by interpolating it)."""
+    """Every user-facing description of the outlier rule must state both halves
+    (percent OR Tukey fence) and, for unscreened prices, that no check ran. Only
+    core.QUALITY_NOTE may name MIN_SAMPLES_FOR_MEDIAN, and by interpolating it."""
     from pitstop import cli, mcp_server
     root = Path(__file__).resolve().parents[1]
     skill = (root / "skills" / "pitstop" / "SKILL.md").read_text(encoding="utf-8")
@@ -253,8 +250,7 @@ def test_outlier_rule_docs_describe_both_halves():
 
 def test_unscreened_price_is_labelled_and_counted():
     # Thin bucket: 3 "Metano" prices in RM is below MIN_SAMPLES_FOR_MEDIAN, so no
-    # median exists and no outlier check runs — the price must say so rather than
-    # look like a screened price that came out clean.
+    # median exists and no outlier check runs.
     def st(sid, fuel, price):
         return core.Station(sid, "", "", "", f"S{sid}", "", "ROMA", "RM", 41.9, 12.5,
                             [core.Price(fuel, price, True, "2026-05-27T00:00:00")])
@@ -274,8 +270,7 @@ def test_unscreened_price_is_labelled_and_counted():
     d_thick, d_thin = thick.to_dict(), thin.to_dict()
     assert d_thick["median_basis"] == "screened"
     assert d_thin["median_basis"] == "unscreened"
-    # `outlier` is emitted only when true: a screened-and-clean price has no
-    # such key, which is exactly why `median_basis` has to be unconditional.
+    # Neither carries `outlier`, which is why `median_basis` is unconditional.
     assert "outlier" not in d_thick and "outlier" not in d_thin
     # Additive only: the pre-existing keys are untouched.
     assert d_thick["regional_median"] == thick.regional_median
@@ -288,8 +283,7 @@ def test_unscreened_price_is_labelled_and_counted():
 
 
 def test_table_marks_unscreened_prices(capsys):
-    """`median_basis` was JSON-only: the table printed an unscreened price exactly
-    like a screened-and-clean one, so a suspiciously cheap row looked checked."""
+    """The table must mark an unscreened price, not print it like a clean one."""
     from pitstop import cli
 
     def st(sid, fuel, price):
@@ -529,15 +523,9 @@ def test_valid_mimit_download_is_cached(monkeypatch, tmp_path):
 
 
 def test_ev_tariff_docs_claim_only_what_pitstop_parses():
-    """pitstop must describe its own parser, not OpenStreetMap's contents.
-
-    Some OSM nodes really do carry a free-text `charge` tag (observed in cached
-    Overpass responses: "0.6€/kWh", "0.85€/kWh"), so any wording that says the
-    tags "carry only fee yes/no" is false. The verifiable claim is that pitstop
-    reads `fee` and no price field. This also pins the dated, world-asserting
-    survey wording ("as of mid-2026", AFIR, Chargeprice, Eco-Movement) out of
-    every shipped surface.
-    """
+    """pitstop must describe its own parser, not OpenStreetMap's contents: some
+    OSM nodes do carry a free-text `charge` tag, so "carry only fee" is false.
+    Also keeps dated third-party survey claims off every shipped surface."""
     from pitstop import chargers, cli, cpo_tariffs, mcp_server
     root = Path(__file__).resolve().parents[1]
     surfaces = {

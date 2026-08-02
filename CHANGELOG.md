@@ -6,66 +6,45 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.1.0] - 2026-08-02
 
-Correctness and honesty release. Every change here closes a gap between what
-`pitstop` claimed and what it actually returned.
+Correctness release: closes gaps between what `pitstop` claimed and what it
+returned.
 
 ### Fixed
 
-- **`pitstop-mcp` was broken on a fresh install.** The `mcp` extra was
-  unbounded (`mcp>=1.0`), and `mcp` 2.0.0 (released 2026-07-28) removed
-  `mcp.server.fastmcp`, which `mcp_server.py` imports — so
-  `pip install "pitstop-cli[mcp]"` produced a `pitstop-mcp` that died on
-  import. Pinned to `mcp>=1.0,<2`. The pin is load-bearing; lift it only
-  together with a migration to the 2.x API.
-- **A failing Overpass response could poison the charger cache for 7 days.**
-  Overpass signals runtime failures with HTTP 200 plus a `remark` key; that
-  body was written over the good cache before any validation, after which
-  every call returned `count: 0` with no error. A remarked body is now never
-  cached, a stale cache is preferred over it, and partial results that do
-  arrive are returned alongside the error rather than dropped.
-- **A MIMIT maintenance page could poison the fuel cache for 24 hours.** Same
-  class of bug on the primary data source: MIMIT answers its maintenance page
-  with HTTP 200, and the body was cached unvalidated. Downloads are now checked
-  for the `Estrazione del ...` header before replacing the cache.
-- The charger table path silently dropped the Overpass error that the JSON path
-  reported, so a degraded answer looked like a complete one.
+- `pitstop-mcp` was dead on a fresh install — `mcp` 2.0.0 removed
+  `mcp.server.fastmcp`. The `mcp` extra is now pinned `mcp>=1.0,<2`; lift the
+  bound only together with a 2.x migration.
+- A failed Overpass response could poison the charger cache for 7 days (its
+  failures arrive as HTTP 200 plus a `remark` and were cached unvalidated),
+  after which every call returned `count: 0` and no error. Such bodies are now
+  never cached, a stale cache wins over them, and partial results come back
+  alongside the error.
+- A MIMIT maintenance page (also HTTP 200) could poison the fuel cache for 24
+  hours. A download must now carry the `Estrazione del ...` header to be cached.
+- The charger table dropped the Overpass error the JSON path reported, so a
+  degraded answer looked complete.
 
 ### Changed
 
-- **The outlier rule is now described accurately everywhere.** Since v0.6.0 a
-  price is flagged when it is >15% below its (fuel, provincia) median **or**
-  below that bucket's Tukey lower fence, but the CLI legend, the agent skill,
-  and the MCP tool description each still documented only the percentage half —
-  so a fence-only flag looked inexplicable and invited an agent to dismiss it.
-  A test now guards all four descriptions against drifting again.
-- **The `outlier` key is documented as what it is:** present only when true.
-  Consumers doing `price["outlier"]` were promised a key that a clean price
-  never carries.
-- Removed a one-off statistic ("a small minority of price rows, concentrated
-  in methane, HVO, GPL…") that had been measured from a single 2026-06-25
-  snapshot and baked into the agent skill as standing fact. The `quality` block
-  reports the real figure for the answer actually returned.
-- Table output now prints its source and extraction dates, so the README's
-  provenance promise holds on every surface rather than only in `--json`.
-- The stations table now marks an unscreened price `~` with a legend, so the
-  screening signal is no longer JSON-only and a suspiciously cheap row in a
-  thin bucket does not look checked when it isn't.
+- The CLI legend, agent skill and MCP tool description documented only the
+  percentage half of the outlier rule; all now state the Tukey lower fence too,
+  and that `outlier` is present only when true.
+- The stations table marks unscreened prices `~` and prints its source and
+  extraction dates.
 - EV tariff wording now describes what `pitstop` parses (OSM's `fee` yes/no
-  flag, no price field) rather than asserting what OpenStreetMap contains —
-  some OSM nodes do carry a free-text `charge` tag, so the old phrasing was
-  contradicted by pitstop's own cached data. A test pins the wording.
+  flag, no price field) rather than asserting what OpenStreetMap contains.
+- Withdrawn: the agent skill claimed unscreened prices were "a small minority,
+  concentrated in methane, HVO, GPL". That was measured from a single snapshot
+  and shipped as standing fact. Read the `quality` block instead — it reports
+  the real figure for the answer you got.
 
 ### Added
 
-- **`quality` block and per-price `median_basis`.** Prices in a (fuel,
-  provincia) bucket with fewer than 15 samples never get an outlier verdict,
-  but they used to serialize identically to a screened-and-clean price. Each
-  price now reports whether it was `screened` or `unscreened`, and the envelope
-  counts both. Purely additive — no existing field changed.
-- The weekly upstream canary now asserts MIMIT **freshness** and schema shape
-  (a frozen or restructured feed goes red) and tolerates transient Overpass
-  5xx, which had been turning the canary red for reasons no one could act on.
-  A 4xx still fails: that means pitstop is asking the wrong question.
+- `quality` block in the JSON envelope plus a per-price `median_basis`: a price
+  in a thin (fuel, provincia) bucket gets no outlier verdict and now says so,
+  instead of serializing like a screened-and-clean price. Purely additive.
+- The weekly upstream canary asserts MIMIT freshness and schema shape, and
+  tolerates transient Overpass 5xx (a 4xx still fails).
 
 ## [1.0.2] - 2026-06-26
 

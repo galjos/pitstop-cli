@@ -1,10 +1,8 @@
 """Curated registry of Italian EV charge-point operators (CPOs) → their
 official tariff pages.
 
-**Why this exists instead of per-station prices.** pitstop parses OSM's `fee`
-yes/no flag and no price field, so it has no per-kWh number to report. Rather
-than guess one, it surfaces the **operator's own tariff page**, where the agent
-or user can read authoritative numbers in one click."""
+pitstop has no per-kWh number to report (it parses OSM's `fee` yes/no flag, not
+a price field), so rather than guess one it points at the operator's own page."""
 
 from __future__ import annotations
 

@@ -1,15 +1,10 @@
 name: Upstream smoke
 
-# Weekly canary over the live upstreams pitstop depends on. Its value is that a
-# red run means "pitstop is broken", so anything that can go red for a reason the
-# maintainer cannot act on has to be kept out of it — a canary that cries wolf
-# gets muted, and then a real MIMIT layout change hides in the noise.
-#
-# MIMIT (the fuel data) is the contract this repo actually rests on, so its
-# failures are hard failures. Overpass is a free, heavily loaded community
-# endpoint where transient 5xx is normal operation, so it is retried and then
-# downgraded to a warning — but pitstop's *handling* of that failure is still
-# asserted on every run.
+# Weekly canary over the live upstreams. A red run must mean "pitstop is broken",
+# so nothing the maintainer cannot act on may turn it red. MIMIT failures are
+# therefore hard failures; Overpass is a free community endpoint where transient
+# 5xx is normal operation, so it is retried and then downgraded to a warning —
+# but pitstop's *handling* of that failure is still asserted on every run.
 
 on:
   schedule:
@@ -59,28 +54,11 @@ jobs:
           import re
           from datetime import date, datetime, timezone
 
-          # Cadence measured against the live feed before this assertion was written.
-          # MIMIT republishes prezzo_alle_8.csv every morning at ~06:45 UTC, and the
-          # file it publishes on day D carries "Estrazione del D-1". Extraction dates
-          # read off archived copies of the real file, at the pre-dawn UTC hour this
-          # job runs at (so: before that morning's publish):
-          #
-          #   2025-12-26 Fri -> 2025-12-24   (published on Christmas Day)
-          #   2025-12-28 Sun -> 2025-12-26
-          #   2026-04-06 Mon -> 2026-04-04   (published on Easter Sunday)
-          #   2026-06-14 Sun -> 2026-06-12
-          #   2026-06-20 Sat -> 2026-06-18
-          #   2026-06-28 Sun -> 2026-06-26
-          #   2026-07-02 Thu -> 2026-06-30
-          #   2026-07-15 Wed -> 2026-07-13
-          #   2026-07-29 Wed -> 2026-07-27
-          #
-          # Nine samples spanning eight months, weekends and public holidays included:
-          # the lag at this hour is 2 days, every time, with no weekend or holiday
-          # pause. 7 days leaves five days of headroom over the only lag ever
-          # observed, so a stalled publish or two stays green while a feed that has
-          # silently frozen -- the failure that this canary exists to catch -- goes
-          # red within one weekly run.
+          # MIMIT publishes daily at ~06:45 UTC; at this job's pre-dawn hour the
+          # extraction date always lags exactly 2 days, weekends and holidays
+          # included (measured over nine archived samples, Dec 2025 - Jul 2026).
+          # 7 lets a stalled publish or two stay green while a frozen feed still
+          # goes red within one weekly run.
           MAX_PRICE_AGE_DAYS = 7
 
           with open("freshness.json", encoding="utf-8") as fh:
@@ -89,10 +67,9 @@ jobs:
           price_date = payload["price_extraction_date"]
           registry_date = payload["registry_extraction_date"]
 
-          # Both dates are read straight off line 0 of the CSV. When MIMIT serves a
-          # maintenance page instead of the file, that line is "<!DOCTYPE html>" and
-          # the parse yields an empty dataset, so a well-formed date here is also the
-          # cheapest proof that we were served the real thing.
+          # Both dates come straight off line 0 of the CSV, so a well-formed date
+          # here is also the cheapest proof we got the file and not MIMIT's
+          # maintenance page (whose line 0 is "<!DOCTYPE html>").
           iso_date = re.compile(r"^\d{4}-\d{2}-\d{2}$")
           for label, value in (("price", price_date), ("registry", registry_date)):
               assert iso_date.match(str(value)), \
@@ -105,9 +82,8 @@ jobs:
               f"is {age_days} days old (limit {MAX_PRICE_AGE_DAYS}); the feed normally "
               f"lags 2 days at this hour"
           )
-          # Guard the other direction too: a date in the future means the line was
-          # misparsed, not that the feed is unusually fresh. One day of slack absorbs
-          # any UTC/CET boundary effect.
+          # A future date means the line was misparsed, not that the feed is fresh;
+          # one day of slack absorbs the UTC/CET boundary.
           assert age_days >= -1, f"price_extraction_date={price_date} is in the future (today={today})"
 
           print(f"price_extraction_date={price_date} ({age_days}d old), "
@@ -122,9 +98,9 @@ jobs:
           import json
           import statistics
 
-          # Every threshold below is an order-of-magnitude floor under what the live
-          # feed carried on 2026-08-01, so ordinary churn cannot turn this red; only a
-          # layout change that guts the parse can. Observed that day, in brackets.
+          # Every threshold sits an order of magnitude clear of what the live feed
+          # carried on 2026-08-01 (in brackets), so only a layout change that guts
+          # the parse can turn this red — not ordinary churn.
           MIN_STATIONS = 10_000        # [23_917]
           MAX_STATIONS = 200_000       # [23_917] -- catches a duplicated/garbage parse
           MIN_PRICED_STATIONS = 5_000  # [21_697]
@@ -132,13 +108,12 @@ jobs:
           MIN_PROVINCE_CODES = 80      # [107 of Italy's 107]
           MIN_IN_BBOX_SHARE = 0.90     # [0.9954]
           MIN_ROWS_PER_MAIN_FUEL = 1_000  # [Benzina 34_267, Gasolio 34_146]
-          # Deliberately wide: a plausible-price band exists to catch a column shift
-          # or a lost decimal, not to track the market. [Benzina 1.999, Gasolio 2.099,
-          # GPL 0.739, Metano 1.599]
+          # Deliberately wide: catches a column shift or a lost decimal, not the
+          # market. [Benzina 1.999, Gasolio 2.099, GPL 0.739, Metano 1.599]
           PRICE_BAND = (0.3, 6.0)
 
-          # The four structural MIMIT fuel categories. The other ~55 values are
-          # brand names (Blue Diesel, HVOlution, ...) that come and go, so they are
+          # The four structural MIMIT categories. The other ~55 values are brand
+          # names (Blue Diesel, HVOlution, ...) that come and go, so they are
           # counted but not required.
           CORE_FUELS = ("Benzina", "Gasolio", "GPL", "Metano")
 
@@ -249,16 +224,10 @@ jobs:
 
           error = payload.get("error")
           if error:
-              # Degraded upstream. pitstop still has to fail *honestly*: a populated
-              # error string and no invented data. Reporting an empty result with no
-              # error is the silent-zero regression the remark handling in
-              # src/pitstop/overpass.py exists to prevent, so it stays a hard failure
-              # even on a day when Overpass is down.
+              # Degraded upstream, but pitstop must still fail honestly: a populated
+              # error and no invented data. Hard failure even on a day Overpass is down.
               assert isinstance(error, str) and error.strip(), repr(error)
-              # Retry-then-warn exists for Overpass being overloaded, not for pitstop
-              # asking the wrong question. Any 4xx except 429 means the request itself
-              # was rejected -- bad query syntax, wrong endpoint URL, blocked user
-              # agent -- which is our defect and must never be muted into a warning.
+              # 429 is exempt: rate-limiting is Overpass shedding load, not a bad request.
               assert not re.search(r"HTTP Error 4(?!29)\d\d", error), (
                   f"Overpass rejected the request: {error} -- a 4xx is pitstop asking the "
                   f"wrong question (query syntax, endpoint URL, user agent), not an "
@@ -270,9 +239,8 @@ jobs:
                       fh.write(error.strip())
                   print(f"Overpass degraded, no data returned: {error}")
                   sys.exit(75)
-              # A timed-out Overpass query can still hand back a partial element set.
-              # pitstop surfaces the error alongside those rows, and the rows are held
-              # to the same assertions as a clean run.
+              # A timed-out query can still hand back a partial element set; those
+              # rows are held to the same assertions as a clean run.
               print(f"Overpass degraded but returned {payload['count']} station(s): {error}")
           else:
               # No error means pitstop is vouching for the result, so hold it to that.
@@ -286,9 +254,8 @@ jobs:
 
           rc=99
           attempt=0
-          # Overpass rejects load with a 504 that clears in well under a minute, so a
-          # short backoff recovers the common case inside one run. 0+45+120s of waiting
-          # plus three 60s fetch timeouts stays inside this job's 15-minute budget.
+          # Overpass sheds load with a 504 that clears in under a minute. 0+45+120s
+          # of backoff plus three 60s fetch timeouts fits the 15-minute job budget.
           for delay in 0 45 120; do
             attempt=$((attempt + 1))
             if [ "$delay" -gt 0 ]; then
@@ -306,7 +273,7 @@ jobs:
 
           if [ "$rc" -eq 75 ]; then
             reason="$(cat overpass_error.txt 2>/dev/null || echo 'unknown')"
-            echo "::warning title=Overpass unavailable, EV charger data assertions skipped::Overpass failed ${attempt} attempts (${reason}). It is a free community endpoint and transient 5xx is normal operation, not a pitstop defect. pitstop's failure envelope was verified well-formed (populated error, count 0, no stations); only the charger data assertions were skipped. The MIMIT fuel-price, freshness and schema assertions all ran."
+            echo "::warning title=Overpass unavailable, EV charger data assertions skipped::Overpass failed ${attempt} attempts (${reason}) — transient 5xx from a free community endpoint, not a pitstop defect. pitstop's failure envelope was verified well-formed (populated error, count 0, no stations); only the charger data assertions were skipped. The MIMIT fuel-price, freshness and schema assertions all ran."
             exit 0
           fi
 

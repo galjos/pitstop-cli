@@ -68,15 +68,13 @@ def fetch_elements(
               file=sys.stderr)
         return (_read(path) if path.exists() else []), error
 
-    # Validate before caching. Overpass reports runtime failures as HTTP 200 with
-    # a `remark` in an otherwise well-formed body — usually with no elements, but
-    # a timeout can also cut a partial set; caching either would replace a good
-    # cache and then serve "0 chargers, no error" for max_age.
+    # Overpass reports runtime failures as HTTP 200 with a `remark` in an otherwise
+    # well-formed body, sometimes with a partial element set. Caching one would
+    # replace a good cache and then serve "0 chargers, no error" for max_age.
     error = _unusable_reason(data)
     if error is not None:
         cached = _read(path) if path.exists() else []
-        # With nothing cached to fall back on, whatever the failed body did carry
-        # still beats reporting zero chargers. It is returned, never cached.
+        # Nothing cached: whatever the failed body carried beats zero chargers.
         elements = cached or _elements_of(data)
         if cached:
             fallback = "using stale cache"
@@ -94,8 +92,7 @@ def fetch_elements(
     return _read(path), None
 
 
-# Overpass also emits benign remarks, so match on the failure wording rather than
-# on the mere presence of the key.
+# Overpass also emits benign remarks, so match failure wording, not the key itself.
 _ERROR_REMARK_MARKERS = ("error", "timed out", "timeout", "out of memory", "exceeded")
 
 

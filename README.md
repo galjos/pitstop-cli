@@ -91,6 +91,8 @@ Example client config entry:
 { "mcpServers": { "pitstop": { "command": "pitstop-mcp" } } }
 ```
 
+Machine-readable command recipes, with the caveats that belong with each answer, are in [evals/agent/recipes.json](evals/agent/recipes.json); the agent skill bundle is in [skills/pitstop/SKILL.md](skills/pitstop/SKILL.md). `scripts/run-agent-evals.sh` checks those recipes against the live CLI, and [evals/agent/README.md](evals/agent/README.md) explains how a scored round is recorded.
+
 ## Development
 
 ```bash

@@ -39,3 +39,19 @@ jobs:
           python-version: "3.12"
       - run: pip install build
       - run: python -m build
+
+  # Offline half of the eval suite: the eval files match the shipped parser, so a
+  # recipe or task can never name a command the CLI cannot run. The live half
+  # needs MIMIT and Overpass and runs in the weekly canary instead.
+  agent-evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - run: scripts/run-agent-evals.sh
+        env:
+          PITSTOP_EVAL_BIN: pitstop
+          PITSTOP_EVAL_OFFLINE: "1"

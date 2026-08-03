@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "purpose": "Machine-readable command recipes for agents using pitstop. These are stable starting paths, not natural-language answers.",
+  "recipes": [
+    {
+      "id": "discovery-first-fuel-names",
+      "question_pattern": "Pick the fuel name the dataset actually uses before filtering on it.",
+      "commands": [
+        "pitstop fuels --json",
+        "pitstop stations --comune ROMA --fuel Gasolio --limit 5 --json"
+      ],
+      "parse": [
+        "fuels[].fuel",
+        "fuels[].count",
+        "price_extraction_date"
+      ],
+      "caveats": [
+        "`--fuel` is a substring match over MIMIT's own fuel names, and it cuts both ways: `Diesel` matches only premium blends such as Blue Diesel while ordinary diesel is `Gasolio`, and `Gasolio` in turn also returns Gasolio Premium, Gasolio speciale, Gasolio Alpino and Gasolio artico. Read `stations[].prices[].fuel` before comparing prices, or a premium blend will be ranked against ordinary diesel.",
+        "Petrol is `Benzina`, LPG is `GPL`, CNG is `Metano`; every other name is a brand blend that can appear or vanish between extractions.",
+        "Run this before guessing a fuel name — a wrong guess returns a plausible but unrelated price."
+      ]
+    },
+    {
+      "id": "cheapest-fuel-near-place",
+      "question_pattern": "Cheapest fuel within driving distance of a coordinate.",
+      "commands": [
+        "pitstop stations --near 41.9028,12.4964 --radius 5 --fuel Gasolio --cheapest --min-price 1.2 --fresh-within-days 30 --limit 5 --json",
+        "pitstop stations --near 41.9028,12.4964 --radius 5 --fuel Gasolio --cheapest --min-price 1.2 --fresh-within-days 30 --drop-outliers --limit 5 --json"
+      ],
+      "parse": [
+        "count",
+        "stations[].distance_km",
+        "stations[].prices[].price",
+        "stations[].prices[].updated",
+        "stations[].prices[].outlier",
+        "stations[].navigation_url",
+        "quality",
+        "price_extraction_date"
+      ],
+      "caveats": [
+        "Prices are daily, not real-time: they are what operators reported as of ~08:00 the day before `price_extraction_date`. Say so instead of saying \"right now\".",
+        "The cheapest rows are the likeliest misreports. Check `outlier` (emitted only when true) or rerun with `--drop-outliers` before sending anyone to a station.",
+        "`--min-price 1.2` drops the 1.000 placeholder some operators report; leave it off for GPL, whose real prices sit below that floor.",
+        "`--fresh-within-days` drops prices whose `updated` timestamp is older than N days; without it a years-old row can win the ranking.",
+        "A station flagged `coordinate_suspect` sits more than 30 km from where its declared comune's other stations are (their median coordinate, or the ISTAT reference point when the comune has fewer than three stations), or outside Italy altogether. Its `distance_km` is unreliable even when its price is not.",
+        "Italy only."
+      ]
+    },
+    {
+      "id": "cheapest-fuel-in-comune",
+      "question_pattern": "Cheapest fuel in a named town, including English, German, or French names.",
+      "commands": [
+        "pitstop stations --comune Milan --fuel Gasolio --cheapest --min-price 1.2 --limit 5 --json",
+        "pitstop stations --comune Milan --fuel \"Benzina,Gasolio\" --limit 10 --json"
+      ],
+      "parse": [
+        "query.comune",
+        "count",
+        "stations[].prices[].fuel",
+        "stations[].prices[].price",
+        "stations[].prices[].self_service"
+      ],
+      "caveats": [
+        "`--comune` resolves common English/German/French city names to MIMIT's Italian name; read `query.comune` to see what it resolved to and name that town in the answer.",
+        "`--comune` is an exact match on the municipality, not a radius: a cheaper station in the next municipality will not appear. Use `--near` for a travel-distance question.",
+        "`--cheapest` with a comma-separated `--fuel` list ranks each station by whichever of those fuels is cheapest there; pass a single fuel when the ranking has to mean one fuel.",
+        "Each station can report a self-service and a served price for the same fuel; `--self` or `--served` picks one.",
+        "Prices are daily, not real-time. Italy only."
+      ]
+    },
+    {
+      "id": "price-sanity-check",
+      "question_pattern": "Decide whether a suspiciously cheap price can be stood behind.",
+      "commands": [
+        "pitstop stations --comune ROMA --fuel Gasolio --cheapest --min-price 1.2 --limit 10 --json",
+        "pitstop stats --fuel Gasolio --json"
+      ],
+      "parse": [
+        "quality.screened",
+        "quality.unscreened",
+        "quality.outliers",
+        "stations[].prices[].median_basis",
+        "stations[].prices[].regional_median",
+        "stations[].prices[].deviation_pct",
+        "stations[].prices[].outlier",
+        "stats.Gasolio.provinces.RM.median"
+      ],
+      "caveats": [
+        "`screened` means the price was compared with the median of its (fuel, provincia) bucket; `unscreened` means that bucket held fewer than 15 samples, so no outlier check ran and the price is returned exactly as reported.",
+        "An unscreened price carries no `regional_median` and no `deviation_pct`. Absence of `outlier` on it means unchecked, not clean.",
+        "`outlier` is emitted only when true — read it with `.get(\"outlier\")`, never `[\"outlier\"]`.",
+        "`stats` medians come from the same daily file, so they are a market baseline, not an independent confirmation.",
+        "A price can be stale rather than wrong: read each price's `updated` before calling it an error."
+      ]
+    },
+    {
+      "id": "compare-provinces",
+      "question_pattern": "Compare fuel price levels between provinces or against the national level.",
+      "commands": [
+        "pitstop stats --fuel Gasolio --json",
+        "pitstop stations --provincia BZ --fuel Gasolio --cheapest --min-price 1.2 --limit 5 --json"
+      ],
+      "parse": [
+        "stats.Gasolio.national.median",
+        "stats.Gasolio.national.count",
+        "stats.Gasolio.provinces.BZ.median",
+        "stats.Gasolio.provinces.BZ.count",
+        "price_extraction_date"
+      ],
+      "caveats": [
+        "Compare provinces with `stats` medians, not with a handful of `stations` rows: five stations are not a province.",
+        "Each province's `count` is the number of price rows behind its median; a thin province moves noticeably day to day.",
+        "`stats` buckets by the 2-letter province code and skips registry rows whose province field is malformed, so its counts are slightly below the raw feed.",
+        "Both figures come from one daily extraction, so a comparison describes that day, not a trend."
+      ]
+    },
+    {
+      "id": "fast-chargers-near-place",
+      "question_pattern": "Find fast or ultra-fast EV chargers near a place.",
+      "commands": [
+        "pitstop chargers --near 46.498,11.354 --radius 10 --fast --limit 10 --json",
+        "pitstop chargers --near 46.498,11.354 --radius 10 --ultra-fast --limit 10 --json",
+        "pitstop chargers --comune Bozen --radius 10 --fast --limit 10 --json"
+      ],
+      "parse": [
+        "count",
+        "error",
+        "stations[].max_power_kw",
+        "stations[].sockets[]",
+        "stations[].operator",
+        "stations[].access",
+        "stations[].distance_km",
+        "stations[].navigation_url"
+      ],
+      "caveats": [
+        "Source is OpenStreetMap via Overpass. Coverage, power, and plug fields are what mappers entered; present them as unverified and name OSM.",
+        "`--fast` is `--min-power 50` over the station's highest tagged socket output, so a charger whose mapper left the power untagged is filtered out rather than reported as slow.",
+        "A populated `error` means the Overpass query failed. With `count: 0` that is \"unknown\", never \"no chargers nearby\"; retry or say the lookup failed.",
+        "`--comune` centres the search on the municipality's ISTAT reference point, not its town centre. For territorially large municipalities that is far off — Bolzano's sits about 20 km up-valley from the city — so prefer `--near lat,lon` whenever the location is known.",
+        "Availability is not in this data: it says where chargers are, not whether one is free now."
+      ]
+    },
+    {
+      "id": "ev-charging-price",
+      "question_pattern": "What does charging cost at a given charger?",
+      "commands": [
+        "pitstop chargers --near 46.498,11.354 --radius 5 --limit 5 --json"
+      ],
+      "parse": [
+        "stations[].fee",
+        "stations[].tariff_info_url",
+        "stations[].operator",
+        "disclaimer",
+        "error"
+      ],
+      "caveats": [
+        "pitstop returns no per-kWh price for any charger: it parses OpenStreetMap's `fee` yes/no flag and no price field. There is no number to report and none to infer.",
+        "`fee` is absent when OSM carries no `fee` tag — that is unknown, not free. `--free` keeps every charger not marked `fee=yes`, untagged ones included, so check the field per station.",
+        "`tariff_info_url` links to the operator's own tariff page and is present only for operators in pitstop's curated list; it is the honest answer to a price question.",
+        "Never carry a figure over from `stations`: fuel prices and charging tariffs are different data from different sources."
+      ]
+    }
+  ]
+}

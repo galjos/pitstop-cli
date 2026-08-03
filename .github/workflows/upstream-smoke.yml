@@ -278,3 +278,8 @@ jobs:
           fi
 
           exit "$rc"
+
+      - name: Run live agent smoke evals
+        run: scripts/run-agent-evals.sh
+        env:
+          PITSTOP_EVAL_BIN: pitstop

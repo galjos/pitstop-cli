@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "purpose": "Evaluate whether agents can answer Italian fuel and EV-charging questions with pitstop without overstating what the open data supports.",
+  "tasks": [
+    {
+      "id": "daily-price-presented-as-current",
+      "prompt": "What is the cheapest diesel in Rome right now?",
+      "expected_command_path": [
+        "pitstop fuels --json",
+        "pitstop stations --comune ROMA --fuel Gasolio --cheapest --min-price 1.2 --fresh-within-days 30 --limit 5 --json",
+        "pitstop stations --comune ROMA --fuel Gasolio --cheapest --min-price 1.2 --fresh-within-days 30 --drop-outliers --limit 5 --json"
+      ],
+      "pass_criteria": [
+        "Answers with the price and states the `price_extraction_date` it came from.",
+        "Says the data is daily and reflects what operators reported around 08:00 the day before that date, rather than repeating the user's \"right now\".",
+        "Uses `Gasolio`, not a guessed English fuel name.",
+        "Applies a placeholder floor or explains why the cheapest row is credible.",
+        "Surfaces `navigation_url` or the address so the answer is actionable."
+      ],
+      "common_failures": [
+        "Presents a daily extraction as a live price.",
+        "Omits the extraction date entirely.",
+        "Ranks without `--min-price`, so a 1.000 placeholder wins.",
+        "Calls the result the cheapest in Rome without noting stations that reported nothing."
+      ]
+    },
+    {
+      "id": "unscreened-price-presented-as-verified",
+      "prompt": "A friend says an HVOlution pump in the province of Siena is selling well under the going rate. Can pitstop confirm that price is real?",
+      "expected_command_path": [
+        "pitstop stations --provincia SI --fuel HVOlution --limit 20 --json",
+        "pitstop stats --fuel HVOlution --json",
+        "pitstop stations --provincia SI --fuel Gasolio --limit 20 --json"
+      ],
+      "pass_criteria": [
+        "Reads `median_basis` per price rather than assuming every price was checked.",
+        "States that an unscreened price sits in a (fuel, provincia) bucket with fewer than 15 samples, so no outlier check ran on it.",
+        "Does not read the absence of `outlier` on an unscreened price as evidence the price is clean.",
+        "Uses the `quality` block's screened/unscreened counts for the answer actually returned.",
+        "Answers \"pitstop cannot confirm it\" when the price is unscreened, and says what would confirm it."
+      ],
+      "common_failures": [
+        "Treats a missing `outlier` key as a passed check.",
+        "Quotes `regional_median` for a price that has none.",
+        "Assumes a fixed screened share instead of reading `quality`.",
+        "Declares the price a confirmed bargain."
+      ]
+    },
+    {
+      "id": "ev-charging-price-invented",
+      "prompt": "How much will it cost me to charge my EV at a fast charger in Bolzano?",
+      "expected_command_path": [
+        "pitstop chargers --near 46.498,11.354 --radius 10 --fast --limit 5 --json"
+      ],
+      "pass_criteria": [
+        "States that pitstop returns no per-kWh price for chargers.",
+        "Points at each station's `tariff_info_url` (the operator's own tariff page) as the way to get the real number.",
+        "Explains `fee` as OpenStreetMap's yes/no flag, and its absence as unknown.",
+        "Still answers the useful part: which fast chargers exist there, at what power, run by whom."
+      ],
+      "common_failures": [
+        "Invents or recalls a €/kWh figure not present in the output.",
+        "Reads `fee: true` as a price or `fee` absent as free.",
+        "Carries a fuel price over from `stations` as a charging cost.",
+        "Refuses the whole question instead of returning the charger data plus the tariff link."
+      ]
+    },
+    {
+      "id": "overpass-failure-read-as-absence",
+      "prompt": "Are there any fast chargers within 10 km of Trento?",
+      "expected_command_path": [
+        "pitstop chargers --near 46.0679,11.1211 --radius 10 --fast --limit 10 --json",
+        "pitstop chargers --near 46.0679,11.1211 --radius 10 --fast --limit 10 --refresh --json"
+      ],
+      "pass_criteria": [
+        "Checks the envelope's `error` field before interpreting `count`.",
+        "Distinguishes `count: 0` with an error (lookup failed) from `count: 0` without one (nothing mapped in range).",
+        "Retries or reports the lookup as failed instead of answering \"there are none\".",
+        "Names OpenStreetMap as the source and treats mapper-entered fields as unverified."
+      ],
+      "common_failures": [
+        "Reports \"no fast chargers near Trento\" from a failed Overpass query.",
+        "Ignores `error` because the envelope still parsed.",
+        "Treats a stale-cache result with an error set as a fresh confirmation.",
+        "Blames pitstop for an upstream 5xx."
+      ]
+    },
+    {
+      "id": "coverage-outside-italy",
+      "prompt": "I'm driving on to Innsbruck tonight. Where is the cheapest diesel near there?",
+      "expected_command_path": [
+        "pitstop stations --near 47.2692,11.4041 --radius 25 --fuel Gasolio --cheapest --min-price 1.2 --limit 5 --json",
+        "pitstop stations --comune Sterzing --fuel Gasolio --cheapest --min-price 1.2 --limit 5 --json"
+      ],
+      "pass_criteria": [
+        "States that the MIMIT dataset covers Italy only, so Austrian stations are out of scope.",
+        "Reads an empty result as out of coverage, not as \"no stations near Innsbruck\".",
+        "Offers the last Italian stations before the border as the useful alternative, if the user's route allows it.",
+        "Does not substitute another country's price source without saying so."
+      ],
+      "common_failures": [
+        "Answers with Italian prices as though they applied in Austria.",
+        "Reports zero results as an absence of stations.",
+        "Invents Austrian prices.",
+        "Widens the radius until Italian stations appear and presents them as \"near Innsbruck\"."
+      ]
+    },
+    {
+      "id": "cheapest-row-is-a-misreport",
+      "prompt": "Find the absolute cheapest diesel in Rome and tell me whether it's worth driving there.",
+      "expected_command_path": [
+        "pitstop stations --comune ROMA --fuel Gasolio --cheapest --min-price 1.2 --limit 10 --json",
+        "pitstop stations --comune ROMA --fuel Gasolio --cheapest --min-price 1.2 --drop-outliers --limit 10 --json",
+        "pitstop stats --fuel Gasolio --json"
+      ],
+      "pass_criteria": [
+        "Notices `outlier: true` and the `deviation_pct` on the top-ranked rows.",
+        "Compares the winning price with `regional_median` or the province median from `stats` before recommending the trip.",
+        "Warns that a price far below the local market is more often a misreport than a bargain.",
+        "Shows the outlier-free ranking as well, rather than silently dropping the flagged rows."
+      ],
+      "common_failures": [
+        "Sends the user across the city to a flagged misreport.",
+        "Uses `[\"outlier\"]` and crashes on prices that do not carry the key.",
+        "Drops flagged rows without telling the user anything was dropped.",
+        "Treats `--min-price 1.2` as an outlier filter."
+      ]
+    },
+    {
+      "id": "mis-geocoded-station-coordinates",
+      "prompt": "I'm at 45.4642,9.1900 in central Milan. Which petrol stations are closest to me?",
+      "expected_command_path": [
+        "pitstop stations --near 45.4642,9.1900 --radius 10 --fuel Benzina --min-price 1.2 --limit 10 --json"
+      ],
+      "pass_criteria": [
+        "Reads `coordinate_suspect` as an optional key and mentions it when present.",
+        "States that a flagged station sits more than 30 km from where its declared comune's other stations are, so its `distance_km` cannot be trusted.",
+        "Notices that a flagged station's own `comune`/`provincia` contradicts its reported distance, and says so.",
+        "Keeps the price claim and the location claim separate rather than discarding both.",
+        "Uses `distance_km` and `navigation_url` for the stations that are not flagged."
+      ],
+      "common_failures": [
+        "Presents a mis-geocoded station as one of the nearest without qualification.",
+        "Drops the whole record because the coordinate is doubtful.",
+        "Assumes every returned station is really within the radius.",
+        "Mistakes `coordinate_suspect` for a price-quality flag.",
+        "Fails to notice that a station in a different provincia cannot plausibly be 1 km away."
+      ]
+    },
+    {
+      "id": "fuel-name-guessed-not-discovered",
+      "prompt": "What is diesel costing in Milan today?",
+      "expected_command_path": [
+        "pitstop fuels --json",
+        "pitstop stations --comune Milan --fuel Gasolio --limit 10 --json"
+      ],
+      "pass_criteria": [
+        "Discovers or already knows that ordinary diesel is `Gasolio` in this dataset.",
+        "If it tried `--fuel Diesel`, notices the result contains only premium blends and corrects itself.",
+        "Reports the municipality the query resolved to (`query.comune` is MILANO) rather than the word the user typed.",
+        "States the extraction date behind \"today\"."
+      ],
+      "common_failures": [
+        "Queries `--fuel Diesel` and reports Blue Diesel prices as ordinary diesel.",
+        "Concludes Milan has no diesel because the guessed name matched nothing.",
+        "Skips `fuels` and guesses repeatedly instead of reading the dataset's own names.",
+        "Mixes premium blends and ordinary diesel into one average."
+      ]
+    },
+    {
+      "id": "province-comparison-from-a-sample",
+      "prompt": "Is diesel cheaper in Trentino (TN) or in South Tyrol (BZ)?",
+      "expected_command_path": [
+        "pitstop stats --fuel Gasolio --json",
+        "pitstop stations --provincia BZ --fuel Gasolio --cheapest --min-price 1.2 --limit 5 --json",
+        "pitstop stations --provincia TN --fuel Gasolio --cheapest --min-price 1.2 --limit 5 --json"
+      ],
+      "pass_criteria": [
+        "Compares the two provinces using `stats` medians, not a handful of station rows.",
+        "Quotes each province's sample `count` alongside its median.",
+        "Says the comparison describes one daily extraction, not a trend.",
+        "Uses station listings only as illustration, clearly labelled as such."
+      ],
+      "common_failures": [
+        "Concludes from five cheapest stations per province.",
+        "Compares a province median against a single station price.",
+        "Presents a one-day gap as a standing difference.",
+        "Ignores that both numbers come from the same file and are not independent."
+      ]
+    },
+    {
+      "id": "charger-fee-flag-read-as-free",
+      "prompt": "Find me a free EV charger near Verona.",
+      "expected_command_path": [
+        "pitstop chargers --near 45.4384,10.9916 --radius 10 --free --limit 10 --json",
+        "pitstop chargers --near 45.4384,10.9916 --radius 10 --limit 10 --json"
+      ],
+      "pass_criteria": [
+        "Checks each returned station's `fee` field instead of trusting the flag name.",
+        "States that `--free` keeps every charger not marked `fee=yes`, so results with no `fee` field are unknown rather than free.",
+        "Separates the chargers explicitly mapped `fee=no` from the untagged ones in the answer.",
+        "Repeats that pitstop reports no per-kWh price and points at `tariff_info_url` where present."
+      ],
+      "common_failures": [
+        "Presents every `--free` result as confirmed free.",
+        "Reads a missing `fee` field as free.",
+        "Promises a free charge from a mapper-entered flag with no date behind it.",
+        "Invents a tariff for the chargers that do charge."
+      ]
+    }
+  ]
+}

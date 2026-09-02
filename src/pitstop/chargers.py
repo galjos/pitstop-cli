@@ -220,9 +220,11 @@ def find_chargers(
             continue
         if min_power_kw > 0 and (st.max_power_kw is None or st.max_power_kw < min_power_kw):
             continue
-        if free_only and st.fee is True:
+        # Unknown fee/access must not pass affirmative filters: --free means
+        # fee=no, not "fee is not yes"; --public means an explicit public tag.
+        if free_only and st.fee is not False:
             continue
-        if public_only and st.access and st.access.lower() not in ("public", "yes", "permissive"):
+        if public_only and st.access.lower() not in ("public", "yes", "permissive"):
             continue
         st.distance_km = round(haversine_km(near[0], near[1], st.lat, st.lon), 2)
         st.tariff_info_url = cpo_tariffs.lookup(st.operator)

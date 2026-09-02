@@ -105,8 +105,10 @@ def _build_parser() -> argparse.ArgumentParser:
     chargers.add_argument("--fast", action="store_true", help="shortcut for --min-power 50")
     chargers.add_argument("--ultra-fast", dest="ultra_fast", action="store_true",
                           help="shortcut for --min-power 150")
-    chargers.add_argument("--free", action="store_true", help="only chargers explicitly free (fee=no)")
-    chargers.add_argument("--public", action="store_true", help="only public access")
+    chargers.add_argument("--free", action="store_true",
+                          help="only chargers explicitly free (fee=no); unknown fee is excluded")
+    chargers.add_argument("--public", action="store_true",
+                          help="only chargers with explicit public/yes/permissive access; unknown access is excluded")
     chargers.add_argument("--limit", type=int, default=20, help="max stations; 0 = no limit")
     chargers.add_argument("--json", dest="as_json", action="store_true")
     chargers.add_argument("--geojson", dest="as_geojson", action="store_true", help="emit GeoJSON FeatureCollection")

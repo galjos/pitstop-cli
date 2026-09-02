@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `--free` now returns only chargers with `fee=no`. Unknown fee (absent OSM
+  tag) used to pass the filter alongside true free stations, so most `--free`
+  hits near Bolzano were chargers that might bill. Refs #6.
+- `--public` now requires an explicit `public` / `yes` / `permissive` access
+  tag; a missing access tag no longer counts as public.
+
 ## [1.1.0] - 2026-08-02
 
 Correctness release: closes gaps between what `pitstop` claimed and what it

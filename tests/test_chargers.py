@@ -134,6 +134,39 @@ def test_find_chargers_filters_operator(monkeypatch):
     assert [s.osm_id for s in only] == [20]
 
 
+def test_find_chargers_free_only_requires_fee_no(monkeypatch):
+    """--free means fee=no; unknown (absent tag) and fee=yes must not pass."""
+    elements = [
+        _node(40, 46.50, 11.35, {"amenity": "charging_station", "fee": "no",
+                                 "socket:type2": "1"}),
+        _node(41, 46.50, 11.35, {"amenity": "charging_station", "fee": "yes",
+                                 "socket:type2": "1"}),
+        _node(42, 46.50, 11.35, {"amenity": "charging_station",
+                                 "socket:type2": "1"}),  # fee absent -> None
+    ]
+    monkeypatch.setattr(chargers.overpass, "fetch_elements", lambda *a, **k: (elements, None))
+    only, error = chargers.find_chargers(near=(46.50, 11.35), radius_km=5, free_only=True)
+    assert error is None
+    assert [s.osm_id for s in only] == [40]
+    assert only[0].fee is False
+
+
+def test_find_chargers_public_only_requires_explicit_public(monkeypatch):
+    """--public must not treat a missing access tag as public."""
+    elements = [
+        _node(50, 46.50, 11.35, {"amenity": "charging_station", "access": "public",
+                                 "socket:type2": "1"}),
+        _node(51, 46.50, 11.35, {"amenity": "charging_station", "access": "private",
+                                 "socket:type2": "1"}),
+        _node(52, 46.50, 11.35, {"amenity": "charging_station",
+                                 "socket:type2": "1"}),  # access absent
+    ]
+    monkeypatch.setattr(chargers.overpass, "fetch_elements", lambda *a, **k: (elements, None))
+    only, error = chargers.find_chargers(near=(46.50, 11.35), radius_km=5, public_only=True)
+    assert error is None
+    assert [s.osm_id for s in only] == [50]
+
+
 # ---- v0.9.0 additions: error envelope, GeoJSON, MCP bilingual normalize ----
 
 

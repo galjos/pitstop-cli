@@ -110,7 +110,7 @@ pytest -q
 
 ## Status & roadmap
 
-v1.1.0 — stable public release: fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, `--fresh-within-days` freshness, combined 15% + Tukey IQR outlier rule, ISTAT comune-coordinate validation, JSON) + **EV charging stations via OSM Overpass** (operator, plug types, max kW, fee, access — `pitstop chargers`) + **operator tariff-page URLs** attached to each EV result. Includes **multi-fuel query support**, **international municipality mapping** (EN/FR/DE), **macro price statistics** (`pitstop stats`), and **navigation/GeoJSON support**. MCP server, agent skill, tests, CI.
+v1.1.1 — stable public release: fuel-price core (registry+price join, filters, proximity, cheapest, `--min-price` floor, `--fresh-within-days` freshness, combined 15% + Tukey IQR outlier rule, ISTAT comune-coordinate validation, JSON) + **EV charging stations via OSM Overpass** (operator, plug types, max kW, fee, access — `pitstop chargers`) + **operator tariff-page URLs** attached to each EV result. Includes **multi-fuel query support**, **international municipality mapping** (EN/FR/DE), **macro price statistics** (`pitstop stats`), and **navigation/GeoJSON support**. MCP server, agent skill, tests, CI.
 
 Planned, roughly in order:
 - per-station **EV tariff data** if a source `pitstop` can read starts publishing per-kWh prices (today it parses only OSM's `fee` yes/no flag, no price field);

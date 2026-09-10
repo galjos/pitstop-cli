@@ -11,9 +11,14 @@ import statistics
 import sys
 import time
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
+from functools import cached_property, lru_cache
 from pathlib import Path
+
+from .validation import validate_search, validate_download, validate_nonnegative
+from .cache import fetch_metadata, write_atomic
+from .results import SearchResults, coverage_of
 
 ANAGRAFICA_URL = "https://www.mimit.gov.it/images/exportCSV/anagrafica_impianti_attivi.csv"
 PREZZO_URL = "https://www.mimit.gov.it/images/exportCSV/prezzo_alle_8.csv"
@@ -123,6 +128,19 @@ class Dataset:
     stations: dict[str, Station]
     registry_date: str
     price_date: str
+    source_fetches: dict[str, float] = field(default_factory=dict, repr=False)
+
+    @cached_property
+    def market_stats(self) -> dict:
+        return fuel_provincia_stats(self)
+
+    @cached_property
+    def centroids(self) -> dict:
+        return comune_centroids(self)
+
+    @property
+    def freshness(self) -> dict:
+        return {source: fetch_metadata(fetched) for source, fetched in self.source_fetches.items()}
 
 
 def cache_dir() -> Path:
@@ -158,9 +176,7 @@ def _cached_file(
             f"'Estrazione del ...'); MIMIT may be serving its maintenance page"
         )
 
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_bytes(data)
-    tmp.replace(path)  # atomic; a partial download never clobbers a good cache file
+    write_atomic(path, data)
     return path
 
 
@@ -239,6 +255,7 @@ def load(
     timeout: int = DEFAULT_TIMEOUT,
 ) -> Dataset:
     """Fetch (or read from cache) both files and return the joined dataset."""
+    validate_download(timeout, max_age)
     ana = _cached_file(
         ANAGRAFICA_URL,
         "anagrafica_impianti_attivi.csv",
@@ -253,9 +270,15 @@ def load(
         max_age=max_age,
         timeout=timeout,
     )
+    return _load_parsed(ana, ana.stat().st_mtime_ns, prezzo, prezzo.stat().st_mtime_ns)
+
+
+@lru_cache(maxsize=1)
+def _load_parsed(ana: Path, registry_mtime: int, prezzo: Path, price_mtime: int) -> Dataset:
     stations, registry_date = _parse_registry(ana)
     price_date = _attach_prices(prezzo, stations)
-    return Dataset(stations=stations, registry_date=registry_date, price_date=price_date)
+    return Dataset(stations, registry_date, price_date,
+                   {"registry": registry_mtime / 1e9, "prices": price_mtime / 1e9})
 
 
 def filter_prices(
@@ -282,7 +305,7 @@ def filter_prices(
             continue
         if max_age_days > 0:
             age = price_age_days(p.updated, today)
-            if age is not None and age > max_age_days:
+            if age is None or not 0 <= age <= max_age_days:
                 continue
         out.append(p)
     return out
@@ -340,11 +363,13 @@ def query_stations(
     validate_comune: bool = True,
     comune_coords: dict[str, tuple[float, float]] | None = None,
 ) -> list[Station]:
-    """Filter, sort, and limit stations. Mutates the dataset's Station objects
-    (narrows prices, sets distance_km), so pass a freshly loaded Dataset."""
+    """Filter, sort, and limit stations without modifying the source dataset."""
+    validate_search(near, radius_km, limit)
+    validate_nonnegative(min_price=min_price, max_age_days=max_age_days,
+                         max_deviation_pct=max_deviation_pct)
     today = date.today() if max_age_days > 0 else None
-    centroids = comune_centroids(ds)
-    stats = fuel_provincia_stats(ds)
+    centroids = ds.centroids
+    stats = ds.market_stats
     if validate_comune and comune_coords is None:
         from . import geocoding
         comune_coords = geocoding.load_comune_coords()
@@ -360,6 +385,8 @@ def query_stations(
         if brand and brand.lower() not in st.brand.lower():
             continue
 
+        st = replace(st, distance_km=None, coordinate_suspect=False)
+
         prices = filter_prices(
             st.prices, fuel, self_only, served_only, min_price, max_age_days, today
         )
@@ -371,6 +398,8 @@ def query_stations(
         prov = st.provincia.strip().upper()
         kept_prices: list[Price] = []
         for p in prices:
+            p = replace(p, regional_median=None, deviation_pct=None, outlier=False,
+                        median_basis="unscreened")
             s = stats.get((p.fuel.strip().lower(), prov))
             if s is not None:
                 med = s["median"]
@@ -392,25 +421,26 @@ def query_stations(
 
         # Flag coordinates that are implausible or far from where they should be.
         # Prefer the data-derived centroid when available (robust if >=3 stations);
-        # fall back to the true ISTAT-derived coord (handles single-station comuni).
-        c = centroids.get(st.comune.upper())
-        true_coord = comune_coords.get(st.comune.upper()) if comune_coords else None
+        # fall back to the municipality reference (handles single-station comuni).
+        key = (st.comune.strip().upper(), st.provincia.strip().upper())
+        c = centroids.get(key)
+        reference_coord = (comune_coords.get(key) or comune_coords.get(key[0])) if comune_coords else None
 
         if not in_italy(st.lat, st.lon):
             st.coordinate_suspect = True
         elif c is not None:
             if haversine_km(c[0], c[1], st.lat, st.lon) > SUSPECT_DISTANCE_KM:
                 st.coordinate_suspect = True
-        elif true_coord is not None:
-            if haversine_km(true_coord[0], true_coord[1], st.lat, st.lon) > SUSPECT_DISTANCE_KM:
+        elif reference_coord is not None:
+            if haversine_km(reference_coord[0], reference_coord[1], st.lat, st.lon) > SUSPECT_DISTANCE_KM:
                 st.coordinate_suspect = True
 
         if near is not None:
             if not in_italy(st.lat, st.lon):
                 continue  # invalid coords cannot be reliably near anything
             # Reject stations whose declared comune is geographically too far
-            # from the query point. Prefer centroid, fall back to true_coord.
-            ref_comune_coord = c or true_coord
+            # from the query point. Prefer centroid, fall back to reference_coord.
+            ref_comune_coord = c or reference_coord
             if ref_comune_coord is not None:
                 comune_dist = haversine_km(near[0], near[1], ref_comune_coord[0], ref_comune_coord[1])
                 if comune_dist > radius_km + 30.0:
@@ -428,9 +458,7 @@ def query_stations(
     else:
         out.sort(key=lambda s: (s.comune, s.name))
 
-    if limit > 0:
-        out = out[:limit]
-    return out
+    return SearchResults(out, fetched_count=len(ds.stations), limit=limit)
 
 
 def price_quality(stations: list[Station]) -> dict:
@@ -464,6 +492,8 @@ def response_envelope(ds: Dataset, stations: list[Station], query: dict) -> dict
         "generated_at": now_iso(),
         "query": query,
         "count": len(stations),
+        "coverage": coverage_of(stations),
+        "freshness": ds.freshness,
         "quality": price_quality(stations),
         "stations": [s.to_dict() for s in stations],
         "disclaimer": DISCLAIMER,
@@ -480,6 +510,8 @@ def geojson_envelope(ds: Dataset, stations: list[Station], query: dict) -> dict:
             "price_extraction_date": ds.price_date,
             "generated_at": now_iso(),
             "query": query,
+            "coverage": coverage_of(stations),
+            "freshness": ds.freshness,
             "disclaimer": DISCLAIMER,
         },
         "features": [s.to_geojson_feature() for s in stations],
@@ -579,19 +611,27 @@ def in_italy(lat: float, lon: float) -> bool:
     return ITALY_BBOX[0] <= lat <= ITALY_BBOX[1] and ITALY_BBOX[2] <= lon <= ITALY_BBOX[3]
 
 
-def comune_centroids(ds: "Dataset", min_stations: int = 3) -> dict[str, tuple[float, float]]:
+def comune_centroids(ds: "Dataset", min_stations: int = 3) -> dict:
     """Median (lat, lon) per comune, only for comuni with at least `min_stations`
     stations. The median resists individual mis-geocoded outliers."""
-    groups: dict[str, list[tuple[float, float]]] = {}
+    groups: dict[tuple[str, str], list[tuple[float, float]]] = {}
     for st in ds.stations.values():
         if not in_italy(st.lat, st.lon):
             continue
-        groups.setdefault(st.comune.upper(), []).append((st.lat, st.lon))
-    return {
+        key = (st.comune.strip().upper(), st.provincia.strip().upper())
+        groups.setdefault(key, []).append((st.lat, st.lon))
+    result = {
         com: (statistics.median(p[0] for p in pts), statistics.median(p[1] for p in pts))
         for com, pts in groups.items()
         if len(pts) >= min_stations
     }
+    name_counts: dict[str, int] = {}
+    for name, _province in groups:
+        name_counts[name] = name_counts.get(name, 0) + 1
+    for key in list(result):
+        if name_counts[key[0]] == 1:
+            result[key[0]] = result[key]
+    return result
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

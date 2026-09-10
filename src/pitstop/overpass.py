@@ -15,6 +15,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from .cache import file_metadata, write_atomic
+from .validation import validate_download
+from .version import __version__
+
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 SOURCE_NAME = "OpenStreetMap (via Overpass API)"
 SOURCE_URL = "https://www.openstreetmap.org/copyright"
@@ -40,21 +44,38 @@ def fetch_elements(
     refresh: bool = False,
     max_age: int = DEFAULT_MAX_AGE,
     timeout: int = DEFAULT_TIMEOUT,
+    metadata: dict | None = None,
 ) -> tuple[list[dict], str | None]:
     """Run an Overpass QL query and return (elements, error_msg).
 
     error_msg is None on success, or a string describing the failure.
     If a failure occurs but a stale cache exists, elements are returned
-    from cache and error_msg is still set."""
+    from cache and error_msg is still set. Optional metadata receives the fetch
+    timestamp, cache age, and cache status for this response."""
+    validate_download(timeout, max_age)
     path = _cache_dir() / f"{_cache_key(query)}.json"
-    if not refresh and path.exists():
+    try:
+        cached_data = path.read_bytes()
+    except OSError:
+        cached_data = b""
+    cache_valid = _unusable_reason(cached_data) is None
+    cached = _elements_of(cached_data) if cache_valid else []
+    if metadata is not None:
+        metadata.clear()
+    def describe(status: str, from_cache: bool = True) -> None:
+        if metadata is not None:
+            metadata.update(file_metadata(path, status) if from_cache and path.exists()
+                            else {"cache_status": status})
+
+    if not refresh and cache_valid:
         if max_age <= 0 or (time.time() - path.stat().st_mtime) < max_age:
-            return _read(path), None
+            describe("hit")
+            return cached, None
 
     req = urllib.request.Request(
         OVERPASS_URL,
         data=query.encode("utf-8"),
-        headers={"User-Agent": "pitstop/0.7 (https://github.com/galjos/pitstop-cli)"},
+        headers={"User-Agent": f"pitstop/{__version__} (https://github.com/galjos/pitstop-cli)"},
         method="POST",
     )
     error = None
@@ -64,19 +85,19 @@ def fetch_elements(
     except (urllib.error.URLError, OSError) as e:
         error = str(e)
         print(f"pitstop: Overpass fetch failed ({error}); "
-              f"{'using stale cache' if path.exists() else 'no data available'}",
+              f"{'using stale cache' if cache_valid else 'no data available'}",
               file=sys.stderr)
-        return (_read(path) if path.exists() else []), error
+        describe("stale_fallback" if cache_valid else "unavailable", cache_valid)
+        return cached, error
 
     # Overpass reports runtime failures as HTTP 200 with a `remark` in an otherwise
     # well-formed body, sometimes with a partial element set. Caching one would
     # replace a good cache and then serve "0 chargers, no error" for max_age.
     error = _unusable_reason(data)
     if error is not None:
-        cached = _read(path) if path.exists() else []
         # Nothing cached: whatever the failed body carried beats zero chargers.
-        elements = cached or _elements_of(data)
-        if cached:
+        elements = cached if cache_valid else _elements_of(data)
+        if cache_valid:
             fallback = "using stale cache"
         elif elements:
             fallback = f"returning {len(elements)} partial element(s), not cached"
@@ -84,11 +105,11 @@ def fetch_elements(
             fallback = "no data available"
         print(f"pitstop: Overpass returned no usable data ({error}); {fallback}",
               file=sys.stderr)
+        describe("stale_fallback" if cache_valid else "partial" if elements else "unavailable", cache_valid)
         return elements, error
 
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_bytes(data)
-    tmp.replace(path)
+    write_atomic(path, data)
+    describe("miss")
     return _read(path), None
 
 
@@ -104,6 +125,10 @@ def _unusable_reason(data: bytes) -> str | None:
         return f"response was not valid JSON: {e}"
     if not isinstance(parsed, dict):
         return "response was not a JSON object"
+    if not isinstance(parsed.get("elements"), list) or any(
+        not isinstance(element, dict) for element in parsed["elements"]
+    ):
+        return "response did not contain a valid elements list"
     remark = str(parsed.get("remark", "")).strip()
     if remark and any(m in remark.lower() for m in _ERROR_REMARK_MARKERS):
         return f"Overpass remark: {remark}"
@@ -117,13 +142,14 @@ def _elements_of(data: bytes) -> list[dict]:
     except (json.JSONDecodeError, UnicodeDecodeError):
         return []
     elements = parsed.get("elements") if isinstance(parsed, dict) else None
-    return elements if isinstance(elements, list) else []
+    return [element for element in elements if isinstance(element, dict)] if isinstance(elements, list) else []
 
 
 def _read(path: Path) -> list[dict]:
     try:
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data.get("elements", []) if isinstance(data, dict) else []
-    except (json.JSONDecodeError, OSError):
+        data = path.read_bytes()
+        if _unusable_reason(data) is not None:
+            return []
+        return _elements_of(data)
+    except OSError:
         return []

@@ -9,7 +9,7 @@ import json
 import sys
 import urllib.error
 
-from . import core
+from . import core, validation
 from .version import __version__
 
 # Must state both halves of the rule core.query_stations applies, or a Tukey-only
@@ -35,6 +35,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         return args.func(args)
+    except validation.QueryError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     except urllib.error.URLError as e:
         print(f"error: could not fetch source data: {e}", file=sys.stderr)
         return 1
@@ -47,8 +50,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="pitstop",
         description=(
-            "Unofficial JSON-first CLI for Italian fuel-station prices, backed by "
-            "MIMIT Osservaprezzi Carburanti open data."
+            "Italian fuel prices and EV charger discovery from MIMIT and "
+            "OpenStreetMap. Unofficial; JSON and readable tables."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -58,11 +61,12 @@ def _build_parser() -> argparse.ArgumentParser:
             "  pitstop fuels"
         ),
     )
+    p.add_argument("--version", action="version", version=f"pitstop {__version__}")
     p.set_defaults(func=None)
     sub = p.add_subparsers(dest="command")
 
     stations = sub.add_parser("stations", help="list and filter fuel stations with prices")
-    _add_load_args(stations)
+    _add_load_args(stations, geojson=True)
     stations.add_argument("--comune", default="", help="municipality name (case-insensitive)")
     stations.add_argument("--provincia", default="", help="2-letter province code, e.g. BZ, RM")
     stations.add_argument("--brand", default="", help="brand/bandiera substring (case-insensitive)")
@@ -75,7 +79,7 @@ def _build_parser() -> argparse.ArgumentParser:
     stations.add_argument("--min-price", dest="min_price", type=float, default=0.0,
                           help="drop prices below this floor (e.g. 1.2 to skip placeholder values); 0 = off")
     stations.add_argument("--fresh-within-days", dest="fresh_days", type=int, default=0,
-                          help="drop prices last updated more than N days ago; 0 = off")
+                          help="keep prices with a known update date within the last N days; 0 = off")
     stations.add_argument("--max-deviation-pct", dest="max_dev_pct", type=float, default=0.0,
                           help="drop prices more than N%% below their (fuel, provincia) median; 0 = off")
     stations.add_argument("--drop-outliers", dest="drop_outliers", action="store_true",
@@ -97,6 +101,8 @@ def _build_parser() -> argparse.ArgumentParser:
     chargers = sub.add_parser("chargers", help="find EV charging stations (OSM)")
     chargers.add_argument("--near", default="", help='proximity to "lat,lon" (or use --comune)')
     chargers.add_argument("--comune", default="", help="center the search on this Italian comune")
+    chargers.add_argument("--provincia", default="", help="province code to disambiguate a comune, e.g. TN")
+    chargers.add_argument("--comune-id", default="", help="six-digit ISTAT municipality code; discover with places")
     chargers.add_argument("--radius", type=float, default=10.0, help="radius in km (default 10)")
     chargers.add_argument("--operator", default="", help="operator substring (case-insensitive)")
     chargers.add_argument("--socket", default="", help="plug-type substring, e.g. ccs, chademo, type2")
@@ -110,11 +116,23 @@ def _build_parser() -> argparse.ArgumentParser:
     chargers.add_argument("--public", action="store_true",
                           help="only chargers with explicit public/yes/permissive access; unknown access is excluded")
     chargers.add_argument("--limit", type=int, default=20, help="max stations; 0 = no limit")
-    chargers.add_argument("--json", dest="as_json", action="store_true")
-    chargers.add_argument("--geojson", dest="as_geojson", action="store_true", help="emit GeoJSON FeatureCollection")
+    charger_format = chargers.add_mutually_exclusive_group()
+    charger_format.add_argument("--json", dest="as_json", action="store_true")
+    charger_format.add_argument("--geojson", dest="as_geojson", action="store_true", help="emit GeoJSON FeatureCollection")
     chargers.add_argument("--refresh", action="store_true",
                           help="bypass the 7-day OSM cache")
+    chargers.add_argument("--timeout", type=int, default=60, help="per-request download timeout in seconds")
+    chargers.add_argument("--max-age", type=int, default=7 * 86400, help="maximum OSM cache age in seconds; 0 = unlimited")
     chargers.set_defaults(func=_cmd_chargers)
+
+    places = sub.add_parser("places", help="find municipality names, provinces, and ISTAT IDs")
+    places.add_argument("query", nargs="?", default="", help="name, international alias, or ISTAT ID")
+    places.add_argument("--provincia", default="", help="province code, e.g. TN")
+    places.add_argument("--limit", type=int, default=20, help="max results; 0 = no limit")
+    places.add_argument("--json", dest="as_json", action="store_true")
+    places.add_argument("--refresh", action="store_true")
+    places.add_argument("--timeout", type=int, default=60)
+    places.set_defaults(func=_cmd_places)
 
     version = sub.add_parser("version", help="print version metadata")
     version.set_defaults(func=lambda _a: (print(f"pitstop {__version__}") or 0))
@@ -122,9 +140,11 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _add_load_args(sp: argparse.ArgumentParser) -> None:
-    sp.add_argument("--json", dest="as_json", action="store_true", help="emit JSON instead of a table")
-    sp.add_argument("--geojson", dest="as_geojson", action="store_true", help="emit GeoJSON FeatureCollection")
+def _add_load_args(sp: argparse.ArgumentParser, *, geojson: bool = False) -> None:
+    output = sp.add_mutually_exclusive_group()
+    output.add_argument("--json", dest="as_json", action="store_true", help="emit JSON instead of a table")
+    if geojson:
+        output.add_argument("--geojson", dest="as_geojson", action="store_true", help="emit GeoJSON FeatureCollection")
     sp.add_argument("--refresh", action="store_true", help="bypass cache and re-download source files")
     sp.add_argument("--max-age", type=int, default=core.DEFAULT_MAX_AGE,
                     help="seconds a cached file stays fresh")
@@ -133,6 +153,7 @@ def _add_load_args(sp: argparse.ArgumentParser) -> None:
 
 
 def _load(args) -> core.Dataset:
+    validation.validate_download(args.timeout, args.max_age)
     return core.load(refresh=args.refresh, max_age=args.max_age, timeout=args.timeout)
 
 
@@ -154,6 +175,9 @@ def _cmd_stations(args) -> int:
             print(f"error: invalid --near value: {e}", file=sys.stderr)
             return 2
 
+    validation.validate_search((near_lat, near_lon) if use_near else None, args.radius, args.limit)
+    validation.validate_nonnegative(min_price=args.min_price, fresh_days=args.fresh_days,
+                                    max_deviation_pct=args.max_dev_pct)
     ds = _load(args)
     comune_norm = geocoding.normalize_comune(args.comune)
 
@@ -248,25 +272,13 @@ def _print_stats_table(stats: dict) -> int:
 
 def _cmd_chargers(args) -> int:
     from . import chargers, geocoding
-    if not args.near.strip() and not args.comune.strip():
-        print("error: pass --near \"lat,lon\" or --comune NAME", file=sys.stderr)
-        return 2
-
-    if args.near.strip():
-        try:
-            lat, lon = _parse_latlon(args.near)
-        except ValueError as e:
-            print(f"error: invalid --near value: {e}", file=sys.stderr)
-            return 2
-    else:
-        coords = geocoding.load_comune_coords()
-        comune_norm = geocoding.normalize_comune(args.comune)
-        true = coords.get(comune_norm)
-        if not true:
-            print(f"error: comune '{args.comune}' not found in the comune-coords reference",
-                  file=sys.stderr)
-            return 1
-        lat, lon = true
+    validation.validate_search(None, args.radius, args.limit)
+    validation.validate_nonnegative(min_power_kw=args.min_power_kw)
+    validation.validate_download(args.timeout, args.max_age)
+    (lat, lon), location = geocoding.resolve_search_location(
+        args.near, args.comune, args.provincia, args.comune_id,
+        refresh=args.refresh, timeout=args.timeout,
+    )
 
     min_kw = args.min_power_kw
     if args.ultra_fast:
@@ -283,13 +295,18 @@ def _cmd_chargers(args) -> int:
         free_only=args.free,
         public_only=args.public,
         refresh=args.refresh,
+        timeout=args.timeout,
+        max_age=args.max_age,
+        limit=args.limit,
     )
-    if args.limit > 0:
-        stations = stations[: args.limit]
 
     query = {"near": f"{lat},{lon}", "radius_km": args.radius}
     if args.comune:
         query["comune"] = args.comune
+    if args.provincia:
+        query["provincia"] = args.provincia
+    if args.comune_id:
+        query["comune_id"] = args.comune_id
     if args.operator:
         query["operator"] = args.operator
     if args.socket:
@@ -302,19 +319,46 @@ def _cmd_chargers(args) -> int:
         query["public"] = True
 
     if args.as_json:
-        _dump(chargers.response_envelope(stations, query, error=error))
+        _dump(chargers.response_envelope(stations, query, error=error, location=location))
         return 0
     if args.as_geojson:
-        _dump(chargers.geojson_envelope(stations, query, error=error))
+        _dump(chargers.geojson_envelope(stations, query, error=error, location=location))
         return 0
     if error:
         # The JSON paths carry `error` in the envelope; the table has nowhere to
         # put it, so an empty or stale result set would look like a complete one.
         print(f"warning: charger data may be incomplete: {error}", file=sys.stderr)
+    if location is not None:
+        print(f"Search center: {location['comune']} ({location['provincia']}, "
+              f"{location['comune_id']}) — {lat},{lon}")
+        for warning in location["warnings"]:
+            print(f"warning: {warning}", file=sys.stderr)
     return _print_chargers_table(stations)
 
 
+def _cmd_places(args) -> int:
+    from . import geocoding
+    validation.validate_search(None, 1, args.limit)
+    validation.validate_download(args.timeout)
+    places = geocoding.find_municipalities(args.query, args.provincia,
+                                          refresh=args.refresh, timeout=args.timeout)
+    matched = len(places)
+    if args.limit:
+        places = places[:args.limit]
+    if args.as_json:
+        _dump({"source": geocoding.COMUNI_SOURCE_NAME, "source_url": geocoding.COMUNI_URL,
+               "query": args.query, "count": len(places), "matched_count": matched,
+               "truncated": len(places) < matched, "places": [p.to_dict() for p in places]})
+    else:
+        print("ISTAT   PR  MUNICIPALITY")
+        for place in places:
+            print(f"{place.istat_id}  {place.province:2}  {place.name}")
+        print(f"\nShowing {len(places)} of {matched} matches. Use --comune-id for an exact selection.")
+    return 0
+
+
 def _print_chargers_table(stations) -> int:
+    _print_coverage(stations)
     headers = ["DIST_KM", "OPERATOR", "MAX_KW", "PLUGS", "CAP", "FEE", "ACCESS", "NAME"]
     rows = [headers]
     for st in stations:
@@ -350,6 +394,9 @@ def _print_chargers_table(stations) -> int:
     # ODbL attribution belongs on every surface, not only the JSON envelope.
     from . import overpass
     print(f"\nSource: {overpass.SOURCE_NAME}.")
+    freshness = getattr(stations, "freshness", {})
+    if freshness.get("fetched_at"):
+        print(f"Downloaded: {freshness['fetched_at']} ({freshness['cache_status']}).")
     return 0
 
 
@@ -388,6 +435,7 @@ def _print_stations_geojson(ds: core.Dataset, stations: list[core.Station], quer
 
 
 def _print_stations_table(ds: core.Dataset, stations: list[core.Station], use_near: bool) -> int:
+    _print_coverage(stations)
     any_suspect = False
     any_outlier = False
     any_unscreened = False
@@ -443,10 +491,14 @@ def _print_stations_table(ds: core.Dataset, stations: list[core.Station], use_ne
 
 
 def _parse_latlon(s: str) -> tuple[float, float]:
-    parts = s.split(",")
-    if len(parts) != 2:
-        raise ValueError('expected "lat,lon"')
-    return float(parts[0].strip()), float(parts[1].strip())
+    return validation.parse_near(s)
+
+
+def _print_coverage(stations) -> None:
+    coverage = getattr(stations, "coverage", None)
+    if coverage is not None:
+        print(f"Showing {coverage['returned_count']} of {coverage['matched_count']} "
+              "matches in the downloaded data.\n")
 
 
 def _dump(obj) -> None:

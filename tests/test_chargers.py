@@ -234,6 +234,44 @@ def test_overpass_error_remark_does_not_overwrite_a_good_cache(monkeypatch, tmp_
     assert json.loads(path.read_bytes()) == json.loads(_good_body()), "cache was clobbered"
 
 
+def test_overpass_metadata_preserves_empty_cache_on_failure(monkeypatch, tmp_path):
+    path = _serve(monkeypatch, tmp_path, _TIMEOUT_BODY)
+    path.write_text('{"elements": []}')
+    metadata = {}
+    assert overpass.fetch_elements(_QUERY, metadata=metadata) == ([], None)
+    assert metadata["cache_status"] == "hit"
+    fetched_at = metadata["fetched_at"]
+    elements, error = overpass.fetch_elements(_QUERY, refresh=True, metadata=metadata)
+    assert elements == [] and error
+    assert metadata["cache_status"] == "stale_fallback"
+    assert metadata["fetched_at"] == fetched_at
+    assert metadata["age_seconds"] >= 0
+
+
+def test_overpass_corrupt_cache_is_retried_without_false_freshness(monkeypatch, tmp_path):
+    path = _serve(monkeypatch, tmp_path, _TIMEOUT_BODY)
+    path.write_text('{"elements": [null]}')
+    metadata = {}
+    elements, error = overpass.fetch_elements(_QUERY, metadata=metadata)
+    assert elements == [] and error
+    assert metadata == {"cache_status": "unavailable"}
+
+
+def test_charger_distance_filter_and_limit_report_coverage(monkeypatch):
+    elements = [_node(i, lat, 11.35, {"amenity": "charging_station"})
+                for i, lat in enumerate([46.5, 46.501, 46.502, 46.8])]
+    monkeypatch.setattr(overpass, "fetch_elements", lambda *a, **k: (elements, None))
+    stations, error = chargers.find_chargers(near=(46.5, 11.35), radius_km=1, limit=1)
+    assert error is None
+    assert stations.coverage == {"fetched_count": 4, "matched_count": 3,
+                                "returned_count": 1, "truncated": True}
+
+
+def test_invalid_upstream_charger_coordinates_are_skipped():
+    for lat, lon in [("NaN", 11), (91, 11), (46, "bad"), (46, 181)]:
+        assert chargers.parse_element(_node(1, lat, lon, {"amenity": "charging_station"})) is None
+
+
 def test_overpass_error_remark_without_cache_reports_error_not_zero_results(monkeypatch, tmp_path):
     path = _serve(monkeypatch, tmp_path, _TIMEOUT_BODY)
 
@@ -323,12 +361,16 @@ def test_mcp_find_chargers_normalizes_bilingual_comune(monkeypatch):
     from pitstop import mcp_server
     # No real network: serve a small coords table and a fake Overpass response.
     monkeypatch.setattr(
-        mcp_server.geocoding, "load_comune_coords",
-        lambda *a, **k: {"BOLZANO": (46.498, 11.354)},
+        mcp_server.geocoding, "find_municipalities",
+        lambda *a, **k: [mcp_server.geocoding.Municipality("BOLZANO", "BZ", "021008", 46.65, 11.22)],
     )
     monkeypatch.setattr(
         mcp_server.ev_chargers.overpass, "fetch_elements",
-        lambda *a, **k: (
+        lambda query, **k: (
+            [{"type": "relation", "id": 1, "tags": {"ref:ISTAT": "021008"},
+              "members": [{"type": "node", "ref": 2, "role": "admin_centre"}]},
+             {"type": "node", "id": 2, "lat": 46.498, "lon": 11.354}]
+            if "ref:ISTAT" in query else
             [_node(99, 46.498, 11.354, {"amenity": "charging_station",
                                          "operator": "Alperia",
                                          "socket:type2": "1"})],
@@ -341,3 +383,4 @@ def test_mcp_find_chargers_normalizes_bilingual_comune(monkeypatch):
     assert "error" not in result, f"got error: {result.get('error')}"
     assert result["count"] == 1
     assert result["stations"][0]["operator"] == "Alperia"
+    assert result["location"]["comune_id"] == "021008"

@@ -1,16 +1,19 @@
 """MCP server exposing pitstop's Italian fuel-price data as agent tools.
 
 Thin wrapper over pitstop.core (the same logic the CLI uses). Requires the
-optional `mcp` extra: pip install "pitstop[mcp]". Run with `pitstop-mcp`."""
+optional `mcp` extra: pip install "pitstop-cli[mcp]". Run with `pitstop-mcp`."""
 
-from typing import Optional
+from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from . import chargers as ev_chargers
-from . import core, geocoding
+from . import core, geocoding, validation
 
 mcp = FastMCP("pitstop")
+_READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False,
+                             idempotentHint=True, openWorldHint=True)
 
 _CAVEATS = (
     " Data is daily (not real-time): prices are as of ~08:00 the day before "
@@ -27,6 +30,8 @@ _CAVEATS = (
     "a (fuel, provincia) bucket with too few samples for a median, so no outlier "
     "check ran on it — do not present it as verified. The envelope's `quality` block "
     "counts screened vs unscreened prices for the current answer."
+    " `coverage` separates fetched stations, matches before the limit, and returned "
+    "stations. `freshness` reports local download times, not price-update times."
 )
 
 _FIND_STATIONS_DESC = (
@@ -54,12 +59,11 @@ _FIND_CHEAPEST_DESC = (
 def _parse_near(near: str) -> Optional[tuple]:
     if not near.strip():
         return None
-    lat, lon = near.split(",")
-    return (float(lat.strip()), float(lon.strip()))
+    return validation.parse_near(near)
 
 
-@mcp.tool()
-def list_fuels() -> dict:
+@mcp.tool(annotations=_READ_ONLY, structured_output=True)
+def list_fuels() -> dict[str, Any]:
     """List the fuel-type names in the Italian MIMIT fuel dataset, with the number
     of price rows for each. Call this first to discover exact `fuel` values."""
     ds = core.load()
@@ -75,8 +79,8 @@ def list_fuels() -> dict:
     }
 
 
-@mcp.tool()
-def get_stats(fuel: str = "") -> dict:
+@mcp.tool(annotations=_READ_ONLY, structured_output=True)
+def get_stats(fuel: str = "") -> dict[str, Any]:
     """Get macro-level price statistics (median, min, max) per Italian province
     and a national aggregate. Use this to give advice on whether a region is
     generally cheaper or more expensive than others. `fuel` supports
@@ -91,7 +95,7 @@ def get_stats(fuel: str = "") -> dict:
     }
 
 
-@mcp.tool(description=_FIND_STATIONS_DESC)
+@mcp.tool(description=_FIND_STATIONS_DESC, annotations=_READ_ONLY, structured_output=True)
 def find_stations(
     fuel: str = "",
     comune: str = "",
@@ -107,7 +111,11 @@ def find_stations(
     max_deviation_pct: float = 0.0,
     drop_outliers: bool = False,
     limit: int = 20,
-) -> dict:
+) -> dict[str, Any]:
+    near_coords = _parse_near(near)
+    validation.validate_search(near_coords, radius_km, limit)
+    validation.validate_nonnegative(min_price=min_price, max_age_days=max_age_days,
+                                    max_deviation_pct=max_deviation_pct)
     ds = core.load()
     comune_norm = geocoding.normalize_comune(comune)
     stations = core.query_stations(
@@ -115,7 +123,7 @@ def find_stations(
         comune=comune_norm,
         provincia=provincia,
         brand=brand,
-        near=_parse_near(near),
+        near=near_coords,
         radius_km=radius_km,
         fuel=fuel,
         self_only=self_only,
@@ -141,13 +149,16 @@ def find_stations(
             "cheapest": cheapest or None,
             "min_price": min_price or None,
             "fresh_within_days": max_age_days or None,
+            "max_deviation_pct": max_deviation_pct or None,
+            "drop_outliers": drop_outliers or None,
+            "limit": limit,
         }.items()
         if v not in ("", None, False)
     }
     return core.response_envelope(ds, stations, query)
 
 
-@mcp.tool(description=_FIND_CHEAPEST_DESC)
+@mcp.tool(description=_FIND_CHEAPEST_DESC, annotations=_READ_ONLY, structured_output=True)
 def find_cheapest(
     fuel: str,
     comune: str = "",
@@ -159,17 +170,21 @@ def find_cheapest(
     max_deviation_pct: float = 0.0,
     drop_outliers: bool = True,
     limit: int = 5,
-) -> dict:
-    if min_price < 0:
+) -> dict[str, Any]:
+    near_coords = _parse_near(near)
+    validation.validate_search(near_coords, radius_km, limit)
+    if min_price == -1:
         min_price = core.default_floor(fuel)
-    if max_age_days < 0:
+    if max_age_days == -1:
         max_age_days = 90  # ignore stale records when ranking by price
+    validation.validate_nonnegative(min_price=min_price, max_age_days=max_age_days,
+                                    max_deviation_pct=max_deviation_pct)
     ds = core.load()
     comune_norm = geocoding.normalize_comune(comune)
     stations = core.query_stations(
         ds,
         comune=comune_norm,
-        near=_parse_near(near),
+        near=near_coords,
         radius_km=radius_km,
         fuel=fuel,
         self_only=self_only,
@@ -200,7 +215,10 @@ def find_cheapest(
 _FIND_CHARGERS_DESC = (
     "Find EV charging stations near a coordinate or Italian comune, from "
     "OpenStreetMap. Pass either `near` (\"lat,lon\") or `comune` (Italian "
-    "municipality name; resolved via the comune-coords reference). Filter by "
+    "municipality name) or `comune_id` (six-digit ISTAT ID from find_places). "
+    "For duplicate names, specify provincia. Municipality IDs resolve to mapped "
+    "OpenStreetMap administrative centers; location records the center and warnings. "
+    "Surface location warnings, fetch errors, coverage, and cache freshness. Filter by "
     "operator substring, plug type (e.g. 'ccs', 'chademo', 'type2'), minimum "
     "max-power kW, free-only, and public-access-only. Returns a JSON envelope "
     "with operator, plug types, max kW, fee, access, distance, and (when the "
@@ -212,7 +230,7 @@ _FIND_CHARGERS_DESC = (
 )
 
 
-@mcp.tool(description=_FIND_CHARGERS_DESC)
+@mcp.tool(description=_FIND_CHARGERS_DESC, annotations=_READ_ONLY, structured_output=True)
 def find_chargers(
     near: str = "",
     comune: str = "",
@@ -223,31 +241,25 @@ def find_chargers(
     free_only: bool = False,
     public_only: bool = False,
     limit: int = 20,
-) -> dict:
-    if not near.strip() and not comune.strip():
-        return ev_chargers.response_envelope([], {}, error="pass either near or comune")
-    if near.strip():
-        lat_s, lon_s = near.split(",")
-        lat, lon = float(lat_s.strip()), float(lon_s.strip())
-    else:
-        comune_norm = geocoding.normalize_comune(comune)
-        coords = geocoding.load_comune_coords()
-        match = coords.get(comune_norm)
-        if not match:
-            return ev_chargers.response_envelope(
-                [], {"comune": comune}, error=f"comune '{comune}' not found"
-            )
-        lat, lon = match
+    provincia: str = "",
+    comune_id: str = "",
+) -> dict[str, Any]:
+    near_coords = _parse_near(near)
+    validation.validate_search(near_coords, radius_km, limit)
+    validation.validate_nonnegative(min_power_kw=min_power_kw)
+    (lat, lon), location = geocoding.resolve_search_location(near, comune, provincia, comune_id)
 
     stations, error = ev_chargers.find_chargers(
         near=(lat, lon), radius_km=radius_km, operator=operator, socket=socket,
-        min_power_kw=min_power_kw, free_only=free_only, public_only=public_only,
+        min_power_kw=min_power_kw, free_only=free_only, public_only=public_only, limit=limit,
     )
-    if limit > 0:
-        stations = stations[:limit]
     query = {"near": f"{lat},{lon}", "radius_km": radius_km}
     if comune:
         query["comune"] = comune
+    if provincia:
+        query["provincia"] = provincia
+    if comune_id:
+        query["comune_id"] = comune_id
     if operator:
         query["operator"] = operator
     if socket:
@@ -258,7 +270,23 @@ def find_chargers(
         query["free"] = True
     if public_only:
         query["public"] = True
-    return ev_chargers.response_envelope(stations, query, error=error)
+    return ev_chargers.response_envelope(stations, query, error=error, location=location)
+
+
+@mcp.tool(annotations=_READ_ONLY, structured_output=True)
+def find_places(query: str, provincia: str = "", limit: int = 20) -> dict[str, Any]:
+    """Find Italian municipality names, province codes, and six-digit ISTAT IDs.
+    Use before a charger search when a municipality name is ambiguous; pass the
+    chosen comune_id or provincia to find_chargers. Supports names such as Bozen.
+    """
+    validation.validate_search(None, 1, limit)
+    places = geocoding.find_municipalities(query, provincia)
+    matched = len(places)
+    if limit:
+        places = places[:limit]
+    return {"source": geocoding.COMUNI_SOURCE_NAME, "source_url": geocoding.COMUNI_URL,
+            "query": query, "count": len(places), "matched_count": matched,
+            "truncated": len(places) < matched, "places": [p.to_dict() for p in places]}
 
 
 def main() -> None:

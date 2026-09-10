@@ -4,6 +4,37 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-09-10
+
+### Added
+
+- Municipality discovery through `pitstop places` and the `find_places` MCP tool;
+  charger searches accept province and ISTAT ID and report the resolved location.
+- Search coverage counts and cache timestamps in JSON and GeoJSON envelopes.
+- Read-only MCP annotations and structured results; installed CLI/MCP checks
+  cover the minimum supported SDK (1.12) and the current 1.x SDK.
+- Standard `--version` shortcut and charger download timeout/cache-age flags.
+
+### Fixed
+
+- Replace Alperia and Neogy tariff links that returned HTTP 404 with their
+  current official charging-offer and direct-payment pages.
+- CLI and MCP searches reject non-finite or out-of-range coordinates,
+  nonpositive radii, and negative limits before fetching data. Invalid CLI
+  searches return exit code 2 instead of empty results or invalid JSON.
+- Freshness filters exclude prices with missing, unparseable, or future update
+  dates. Unfiltered queries still include those reported prices.
+- Charger municipality centers come from OSM administrative relations keyed by
+  ISTAT ID, correcting the misplaced Bolzano reference. Duplicate town names
+  require disambiguation instead of silently selecting a different province.
+- Fuel queries no longer mutate shared station/price objects. Parsed datasets
+  and statistics are reused between MCP calls and invalidated after a refresh.
+- Cache writes use unique temporary files; malformed Overpass caches are retried
+  and valid empty caches retain their provenance during an upstream failure.
+- Charger results exclude invalid coordinates and centers outside the radius.
+- Release workflows check out the requested tag and verify that tag, package,
+  and runtime versions agree before publication.
+
 ## [1.1.1] - 2026-09-07
 
 ### Fixed

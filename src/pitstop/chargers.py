@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 
 from . import core, cpo_tariffs, overpass
 from .core import haversine_km, now_iso
+from .validation import validate_search, validate_nonnegative, validate_download
+from .results import SearchResults, coverage_of
 
 # Map OSM `socket:<key>` to a human-readable plug name.
 _SOCKET_TYPES = {
@@ -140,6 +142,13 @@ def parse_element(el: dict) -> EvStation | None:
     if lat is None or lon is None:
         return None
 
+    try:
+        lat, lon = float(lat), float(lon)
+    except (ValueError, TypeError):
+        return None
+    if not math.isfinite(lat) or not -90 <= lat <= 90 or not math.isfinite(lon) or not -180 <= lon <= 180:
+        return None
+
     sockets: list[Socket] = []
     for k, v in tags.items():
         # match keys like socket:type2 (count) — ignore the :output / :voltage variants
@@ -198,13 +207,21 @@ def find_chargers(
     free_only: bool = False,
     public_only: bool = False,
     refresh: bool = False,
+    timeout: int = overpass.DEFAULT_TIMEOUT,
+    max_age: int = overpass.DEFAULT_MAX_AGE,
+    limit: int = 0,
 ) -> tuple[list[EvStation], str | None]:
     """Fetch and filter EV charging stations from OSM around a point.
     Returns (stations, error_msg)."""
+    validate_search(near, radius_km, limit)
+    validate_nonnegative(min_power_kw=min_power_kw)
+    validate_download(timeout, max_age)
     # No Italy bbox check: that bound is for the fuel data, OSM EV lookups are not.
-    radius_m = int(max(100, radius_km * 1000))
+    radius_m = max(1, math.ceil(radius_km * 1000))
+    freshness: dict = {}
     elements, error = overpass.fetch_elements(_overpass_query(near[0], near[1], radius_m),
-                                               refresh=refresh)
+                                               refresh=refresh, timeout=timeout,
+                                               max_age=max_age, metadata=freshness)
 
     out: list[EvStation] = []
     op_lc = operator.strip().lower()
@@ -226,21 +243,27 @@ def find_chargers(
             continue
         if public_only and st.access.lower() not in ("public", "yes", "permissive"):
             continue
-        st.distance_km = round(haversine_km(near[0], near[1], st.lat, st.lon), 2)
+        distance = haversine_km(near[0], near[1], st.lat, st.lon)
+        if distance > radius_km:
+            continue
+        st.distance_km = round(distance, 2)
         st.tariff_info_url = cpo_tariffs.lookup(st.operator)
         out.append(st)
 
     out.sort(key=lambda s: s.distance_km if s.distance_km is not None else math.inf)
-    return out, error
+    return SearchResults(out, fetched_count=len(elements), limit=limit, freshness=freshness), error
 
 
-def response_envelope(stations: list[EvStation], query: dict, error: str | None = None) -> dict:
+def response_envelope(stations: list[EvStation], query: dict, error: str | None = None,
+                      location: dict | None = None) -> dict:
     env = {
         "source": overpass.SOURCE_NAME,
         "source_url": overpass.SOURCE_URL,
         "generated_at": core.now_iso(),
         "query": query,
         "count": len(stations),
+        "coverage": coverage_of(stations),
+        "freshness": getattr(stations, "freshness", {}),
         "stations": [s.to_dict() for s in stations],
         "disclaimer": (
             "Unofficial tool. EV-charger data from OpenStreetMap via Overpass API "
@@ -255,16 +278,21 @@ def response_envelope(stations: list[EvStation], query: dict, error: str | None 
     }
     if error:
         env["error"] = error
+    if location is not None:
+        env["location"] = location
     return env
 
 
-def geojson_envelope(stations: list[EvStation], query: dict, error: str | None = None) -> dict:
+def geojson_envelope(stations: list[EvStation], query: dict, error: str | None = None,
+                     location: dict | None = None) -> dict:
     env = {
         "type": "FeatureCollection",
         "metadata": {
             "source": overpass.SOURCE_NAME,
             "generated_at": core.now_iso(),
             "query": query,
+            "coverage": coverage_of(stations),
+            "freshness": getattr(stations, "freshness", {}),
             "disclaimer": (
                 "Unofficial tool. EV-charger data from OpenStreetMap via Overpass API "
                 "(© OpenStreetMap contributors, ODbL). Coverage and freshness vary. "
@@ -276,4 +304,6 @@ def geojson_envelope(stations: list[EvStation], query: dict, error: str | None =
     }
     if error:
         env["metadata"]["error"] = error
+    if location is not None:
+        env["metadata"]["location"] = location
     return env

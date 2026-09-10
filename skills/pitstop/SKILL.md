@@ -13,14 +13,14 @@ metadata:
             {
               "id": "uvx",
               "kind": "uvx",
-              "package": "pitstop-cli>=1.1.1",
+              "package": "pitstop-cli>=1.2.0",
               "bins": ["pitstop"],
               "label": "Run pitstop on demand (uvx)",
             },
             {
               "id": "pipx",
               "kind": "pipx",
-              "package": "pitstop-cli>=1.1.1",
+              "package": "pitstop-cli>=1.2.0",
               "bins": ["pitstop"],
               "label": "Install pitstop (pipx)",
             },
@@ -58,6 +58,9 @@ pitstop stations --comune ROME --fuel Gasolio --geojson
 
 # Find EV chargers with error reporting
 pitstop chargers --comune Venice --json
+
+# Public CCS chargers rated at least 50 kW
+pitstop chargers --comune Bozen --radius 5 --socket ccs --fast --public --json
 ```
 
 Key flags:
@@ -65,15 +68,21 @@ Key flags:
 - `--fuel`: Substring search. Supports **comma-separated lists** (e.g. `Benzina,Gasolio`).
 - `--geojson`: Emits a standard GeoJSON FeatureCollection with properties and geometry.
 - Other flags: `--provincia`, `--brand`, `--near`, `--radius`, `--self`/`--served`, `--cheapest`, `--min-price`, `--fresh-within-days`, `--limit`, `--json`.
+- Charger power uses `--min-power` in kW; `--fast` means at least 50 kW and `--ultra-fast` at least 150 kW. Inspect the matching socket's power as well as the station maximum.
 
 ## JSON / GeoJSON contract
 
 - `stations --json` returns a stable envelope with `stations[]`, `query`, and a `quality` block (how many returned prices were screened against a local median). Each station includes a `navigation_url` (Google Maps).
 - `stations --geojson` returns a `FeatureCollection`. Geometry is `Point` [lon, lat]. Properties include all station metadata.
 - `chargers` output includes an `error` field in the envelope when the external Overpass API fails.
+- Search `coverage` distinguishes fetched rows, matches before the limit, and returned rows. Read `freshness` for cache age; `generated_at` is response time, not source freshness. Surface stale-cache and partial-result errors.
+- For chargers, use `pitstop places <name> --json` to discover municipality IDs. Resolve duplicate names with `--provincia` or use `--comune-id`. The returned `location` identifies the mapped OSM administrative center and any coordinate discrepancy; surface its warnings. If no center is available, request explicit coordinates.
 
 ## Advice for Agents
 
+- **Discover fuel names:** Run `pitstop fuels --json`; ordinary diesel is `Gasolio`. Substring matches also include premium blends, so compare exact `prices[].fuel` values when a specific fuel is requested.
+- **Choose a useful stop:** When ranking within a bounded area, inspect every match (`--limit 0`) and break equal-price ties by distance. Distances are straight-line; a navigation link provides the next step for checking the driving route.
+- **Follow the tariff handoff:** Open the official `tariff_info_url` when answering charging-cost questions. Check membership requirements, location, and payment method; a contract rate is not automatically the walk-up price. Report failed links rather than quoting an unverified tariff.
 - **Use International Names:** You can pass "Rome" or "Milan" directly to `--comune`; the tool handles the translation to the Italian dataset keys.
 - **Batch Fuel Queries:** To compare Petrol and Diesel, use `--fuel "Benzina,Gasolio"` in a single call.
 - **Surface Maps:** Always include the `navigation_url` in your response so the user can navigate to the station immediately.

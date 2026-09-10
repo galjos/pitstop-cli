@@ -76,6 +76,20 @@ def test_attach_prices_fields(registry_path, prices_path):
     assert gasolio.self_service is False
 
 
+def test_load_reuses_parsing_and_invalidates_after_atomic_refresh(registry_path, prices_path, monkeypatch):
+    from pitstop.cache import write_atomic
+    monkeypatch.setattr(core, "_cached_file", lambda url, *a, **k:
+                        registry_path if url == core.ANAGRAFICA_URL else prices_path)
+    first = core.load()
+    assert core.load() is first
+    write_atomic(prices_path, PRICES.replace("1.899", "1.999").encode())
+    updated = core.load()
+    assert updated is not first
+    assert updated.stations["1"].prices[0].price == 1.999
+    assert first.stations["1"].prices[0].price == 1.899
+    assert updated.freshness["prices"]["age_seconds"] >= 0
+
+
 def test_filter_prices_fuel_substring():
     prices = [
         core.Price("Gasolio", 1.799, False, ""),
@@ -127,6 +141,17 @@ def test_filter_prices_max_age_drops_stale():
     # without the freshness filter, the stale cheap one is kept
     out_all = core.filter_prices(prices, fuel="gasolio", today=today)
     assert len(out_all) == 2
+
+
+def test_freshness_filter_requires_a_known_nonfuture_date():
+    today = date(2026, 9, 10)
+    prices = [
+        core.Price("Gasolio", 1.8, True, updated)
+        for updated in ("", "not-a-date", "2026-09-11T08:00:00", "2026-09-03T08:00:00")
+    ]
+    out = core.filter_prices(prices, max_age_days=7, today=today)
+    assert [p.updated for p in out] == ["2026-09-03T08:00:00"]
+    assert core.filter_prices(prices, today=today) == prices
 
 
 def test_default_floor():

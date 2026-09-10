@@ -22,7 +22,7 @@
     },
     {
       "id": "cheapest-fuel-near-place",
-      "question_pattern": "Cheapest fuel within driving distance of a coordinate.",
+      "question_pattern": "Cheapest fuel within a straight-line radius of a coordinate.",
       "commands": [
         "pitstop stations --near 41.9028,12.4964 --radius 5 --fuel Gasolio --cheapest --min-price 1.2 --fresh-within-days 30 --limit 5 --json",
         "pitstop stations --near 41.9028,12.4964 --radius 5 --fuel Gasolio --cheapest --min-price 1.2 --fresh-within-days 30 --drop-outliers --limit 5 --json"
@@ -43,7 +43,8 @@
         "`--min-price 1.2` drops the 1.000 placeholder some operators report; leave it off for GPL, whose real prices sit below that floor.",
         "`--fresh-within-days` drops prices whose `updated` timestamp is older than N days; without it a years-old row can win the ranking.",
         "A station flagged `coordinate_suspect` sits more than 30 km from where its declared comune's other stations are (their median coordinate, or the ISTAT reference point when the comune has fewer than three stations), or outside Italy altogether. Its `distance_km` is unreliable even when its price is not.",
-        "Italy only."
+        "Italy only.",
+        "distance_km is straight-line distance, not a driving route or journey time."
       ]
     },
     {
@@ -130,14 +131,18 @@
         "stations[].operator",
         "stations[].access",
         "stations[].distance_km",
-        "stations[].navigation_url"
+        "stations[].navigation_url",
+        "coverage",
+        "freshness",
+        "location.warnings[] (when a municipality was used)"
       ],
       "caveats": [
         "Source is OpenStreetMap via Overpass. Coverage, power, and plug fields are what mappers entered; present them as unverified and name OSM.",
         "`--fast` is `--min-power 50` over the station's highest tagged socket output, so a charger whose mapper left the power untagged is filtered out rather than reported as slow.",
         "A populated `error` means the Overpass query failed. With `count: 0` that is \"unknown\", never \"no chargers nearby\"; retry or say the lookup failed.",
-        "`--comune` centres the search on the municipality's ISTAT reference point, not its town centre. For territorially large municipalities that is far off — Bolzano's sits about 20 km up-valley from the city — so prefer `--near lat,lon` whenever the location is known.",
-        "Availability is not in this data: it says where chargers are, not whether one is free now."
+        "`--comune` resolves an ISTAT municipality ID to its mapped OSM administrative center. Inspect `location` and its warnings. Duplicate names need `--provincia` or `--comune-id`; use explicit `--near` when the intended point is known.",
+        "Availability is not in this data: it says where chargers are, not whether one is free now.",
+        "Surface cache age and upstream errors. Counts describe inspected OSM data, not an exhaustive or live inventory."
       ]
     },
     {
@@ -151,13 +156,36 @@
         "stations[].tariff_info_url",
         "stations[].operator",
         "disclaimer",
-        "error"
+        "error",
+        "coverage",
+        "freshness",
+        "location.warnings[] (when a municipality was used)"
       ],
       "caveats": [
         "pitstop returns no per-kWh price for any charger: it parses OpenStreetMap's `fee` yes/no flag and no price field. There is no number to report and none to infer.",
-        "`fee` is absent when OSM carries no `fee` tag — that is unknown, not free. `--free` keeps every charger not marked `fee=yes`, untagged ones included, so check the field per station.",
+        "`fee` is absent when OSM carries no `fee` tag — that is unknown, not free. `--free` requires `fee=no`; unknown fees are excluded. This mapper-entered flag is not a current operator price quote.",
         "`tariff_info_url` links to the operator's own tariff page and is present only for operators in pitstop's curated list; it is the honest answer to a price question.",
-        "Never carry a figure over from `stations`: fuel prices and charging tariffs are different data from different sources."
+        "Never carry a figure over from `stations`: fuel prices and charging tariffs are different data from different sources.",
+        "Surface cache age and upstream errors. Counts describe inspected OSM data, not an exhaustive or live inventory."
+      ]
+    },
+    {
+      "id": "municipality-discovery",
+      "question_pattern": "Find chargers in a municipality whose name may be shared by multiple provinces.",
+      "commands": [
+        "pitstop places Livo --json",
+        "pitstop chargers --comune Livo --provincia TN --limit 5 --json"
+      ],
+      "parse": [
+        "places[].comune_id",
+        "places[].provincia",
+        "location",
+        "coverage",
+        "freshness"
+      ],
+      "caveats": [
+        "Select the intended province before searching. An ambiguous name is a usage error.",
+        "A missing mapped center is reported; provide explicit coordinates rather than substituting another municipality."
       ]
     }
   ]

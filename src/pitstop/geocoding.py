@@ -1,7 +1,8 @@
-"""Second data source: authoritative Italian comune coordinates, used to
+"""Second data source: Italian comune reference coordinates, used to
 validate MIMIT station coordinates. Self-contained centroid heuristics in
 `core` cannot catch mis-geocoded stations in single-station comuni (e.g.
-RASUN-ANTERSELVA), so a true comune→(lat, lon) reference is required.
+RASUN-ANTERSELVA). Reference coordinates can also be inaccurate; they are a
+cross-check, not proof of a station's location.
 
 Source: opendatasicilia/comuni-italiani `main.csv`, derived from ISTAT.
 Runtime fetch + local cache; no redistribution."""
@@ -9,12 +10,18 @@ Runtime fetch + local cache; no redistribution."""
 from __future__ import annotations
 
 import csv
+import io
+import math
 import os
 import sys
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
+
+from .cache import write_atomic
+from .validation import QueryError, parse_near, validate_download
 
 COMUNI_URL = (
     "https://raw.githubusercontent.com/opendatasicilia/comuni-italiani/main/dati/main.csv"
@@ -96,6 +103,7 @@ def normalize_comune(name: str) -> str:
 
 
 def _cached_path(refresh: bool, max_age: int, timeout: int) -> Path | None:
+    validate_download(timeout, max_age)
     path = _cache_dir() / "comuni_main.csv"
     if not refresh and path.exists():
         if max_age <= 0 or (time.time() - path.stat().st_mtime) < max_age:
@@ -109,9 +117,12 @@ def _cached_path(refresh: bool, max_age: int, timeout: int) -> Path | None:
         print(f"pitstop: could not fetch comune coordinates ({e}); "
               f"falling back to self-contained heuristics", file=sys.stderr)
         return path if path.exists() else None
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_bytes(data)
-    tmp.replace(path)
+    if not _read_municipalities(data.decode("utf-8-sig")):
+        if path.exists():
+            print("pitstop: invalid municipality reference; using the cached copy", file=sys.stderr)
+            return path
+        raise OSError("municipality reference contained no usable records")
+    write_atomic(path, data)
     return path
 
 
@@ -120,27 +131,124 @@ def load_comune_coords(
     refresh: bool = False,
     max_age: int = DEFAULT_COMUNI_MAX_AGE,
     timeout: int = DEFAULT_TIMEOUT,
-) -> dict[str, tuple[float, float]]:
-    """Return {normalized_comune_name: (lat, lon)}. Empty dict on fetch failure
-    with no cache, so callers should treat it as best-effort."""
+) -> dict:
+    """Coordinates keyed by (name, province), plus unambiguous names.
+
+    Empty on fetch failure with no cache. These reference coordinates are only
+    for station sanity checks; charger searches use the mapped OSM center.
+    """
     path = _cached_path(refresh, max_age, timeout)
     if path is None:
         return {}
     return _parse_comuni(path)
 
 
-def _parse_comuni(path: Path) -> dict[str, tuple[float, float]]:
-    out: dict[str, tuple[float, float]] = {}
-    with path.open("r", encoding="utf-8", errors="replace", newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            name = row.get("comune", "").strip()
-            if not name:
-                continue
-            try:
-                lat = float(row["lat"])
-                lon = float(row["long"])
-            except (KeyError, ValueError, TypeError):
-                continue
-            out[normalize_comune(name)] = (lat, lon)
+@dataclass(frozen=True)
+class Municipality:
+    name: str
+    province: str
+    istat_id: str
+    lat: float
+    lon: float
+
+    def to_dict(self) -> dict:
+        return {"comune": self.name, "provincia": self.province, "comune_id": self.istat_id}
+
+
+def _read_municipalities(text: str) -> list[Municipality]:
+    records = []
+    for row in csv.DictReader(io.StringIO(text)):
+        name = normalize_comune(row.get("comune", ""))
+        code = (row.get("pro_com_t") or "").strip()
+        province = (row.get("sigla") or "").strip().upper()
+        if not name or not code.isdigit() or len(code) != 6 or not province:
+            continue
+        try:
+            lat, lon = float(row["lat"]), float(row["long"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180:
+            records.append(Municipality(name, province, code, lat, lon))
+    return records
+
+
+def _parse_comuni(path: Path) -> dict:
+    out = {}
+    by_name: dict[str, list[Municipality]] = {}
+    for place in _read_municipalities(path.read_text(encoding="utf-8-sig")):
+        out[(place.name, place.province)] = (place.lat, place.lon)
+        by_name.setdefault(place.name, []).append(place)
+    for name, places in by_name.items():
+        if len(places) == 1:
+            out[name] = (places[0].lat, places[0].lon)
     return out
+
+
+def find_municipalities(query: str = "", provincia: str = "", *,
+                        refresh: bool = False, timeout: int = 60) -> list[Municipality]:
+    path = _cached_path(refresh, DEFAULT_COMUNI_MAX_AGE, timeout)
+    if path is None:
+        raise OSError("municipality reference unavailable; use explicit --near coordinates")
+    records = _read_municipalities(path.read_text(encoding="utf-8-sig"))
+    if not records:
+        raise OSError("municipality reference contained no usable records; retry with --refresh or use --near")
+    query = normalize_comune(query)
+    province = provincia.strip().upper()
+    return sorted((p for p in records if (not query or query in p.name or query == p.istat_id)
+                   and (not province or p.province == province)), key=lambda p: (p.name, p.province))
+
+
+def resolve_municipality(comune: str = "", provincia: str = "", comune_id: str = "", *,
+                         refresh: bool = False, timeout: int = 60) -> dict:
+    from . import overpass
+    from .core import haversine_km
+
+    name = normalize_comune(comune)
+    code = comune_id.strip()
+    if code and (not code.isdigit() or len(code) != 6):
+        raise QueryError("comune_id must be a six-digit ISTAT municipality code")
+    candidates = [p for p in find_municipalities(code or name, provincia, refresh=refresh, timeout=timeout)
+                  if (not code or p.istat_id == code) and (not name or p.name == name)]
+    if not candidates:
+        raise QueryError(f"municipality {comune or comune_id!r} not found; use pitstop places or --near")
+    if len(candidates) != 1:
+        choices = ", ".join(f"{p.name} ({p.province}, {p.istat_id})" for p in candidates)
+        raise QueryError(f"ambiguous municipality: {choices}; select --provincia or --comune-id")
+    place = candidates[0]
+    query = ('[out:json][timeout:25];rel["boundary"="administrative"]'
+             f'["admin_level"="8"]["ref:ISTAT"="{place.istat_id}"];'
+             '(._;node(r:"admin_centre"););out body;')
+    freshness: dict = {}
+    elements, error = overpass.fetch_elements(query, refresh=refresh, timeout=timeout,
+                                              metadata=freshness)
+    relations = [e for e in elements if e.get("type") == "relation"
+                 and e.get("tags", {}).get("ref:ISTAT") == place.istat_id]
+    center_ids = {m.get("ref") for r in relations for m in r.get("members", [])
+                  if m.get("role") == "admin_centre" and m.get("type") == "node"}
+    centers = [e for e in elements if e.get("type") == "node" and e.get("id") in center_ids]
+    if len(relations) != 1 or len(centers) != 1:
+        raise OSError(f"no unique mapped center for {place.name} ({place.province}); "
+                      f"use --near with known coordinates" + (f": {error}" if error else ""))
+    center = centers[0]
+    lat, lon = parse_near(f"{center.get('lat')},{center.get('lon')}")
+    distance = round(haversine_km(place.lat, place.lon, lat, lon), 2)
+    warnings = [error] if error else []
+    if distance > 5:
+        warnings.append(f"reference coordinate differs by {distance:g} km; using the linked OSM administrative center")
+    return {**place.to_dict(), "lat": lat, "lon": lon,
+            "source": overpass.SOURCE_NAME,
+            "source_url": f"https://www.openstreetmap.org/node/{center['id']}",
+            "identity_source": COMUNI_SOURCE_NAME,
+            "reference_distance_km": distance, "freshness": freshness, "warnings": warnings}
+
+
+def resolve_search_location(near: str, comune: str = "", provincia: str = "", comune_id: str = "", *,
+                            refresh: bool = False, timeout: int = 60) -> tuple[tuple[float, float], dict | None]:
+    if near.strip():
+        if comune.strip() or provincia.strip() or comune_id.strip():
+            raise QueryError("pass either near coordinates or a municipality selector")
+        return parse_near(near), None
+    if not comune.strip() and not comune_id.strip():
+        raise QueryError("pass --near, --comune, or --comune-id")
+    location = resolve_municipality(comune, provincia, comune_id, refresh=refresh, timeout=timeout)
+    return (location["lat"], location["lon"]), location

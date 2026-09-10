@@ -20,15 +20,20 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest -q
 
-  mcp-import:
+  mcp-protocol:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        mcp-requirement: ["mcp==1.12.0", "mcp<2"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e ".[mcp]"
-      - run: python -c "import pitstop.mcp_server; print('mcp server imports OK')"
+      - run: pip install ".[mcp]" "$MCP_REQUIREMENT"
+        env:
+          MCP_REQUIREMENT: ${{ matrix.mcp-requirement }}
+      - run: python scripts/smoke-installed.py
 
   build:
     runs-on: ubuntu-latest
@@ -39,6 +44,8 @@ jobs:
           python-version: "3.12"
       - run: pip install build
       - run: python -m build
+      - run: pip install --no-deps dist/*.whl
+      - run: python scripts/smoke-installed.py
 
   # Offline half of the eval suite: the eval files match the shipped parser, so a
   # recipe or task can never name a command the CLI cannot run. The live half

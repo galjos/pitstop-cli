@@ -10,8 +10,8 @@ from __future__ import annotations
 # match against the station's `operator` tag, so minor naming differences
 # (e.g. "Alperia Smart Mobility" vs "Alperia") still resolve.
 TARIFF_URLS: dict[str, str] = {
-    "alperia":     "https://www.alperia.eu/it/elettrica-ricarica.html",
-    "neogy":       "https://www.neogy.it/it/ricarica-pubblica.html",
+    "alperia":     "https://www.alperia.eu/easycharge/",
+    "neogy":       "https://www.neogy.it/rete-di-ricarica/direct-payment.html",
     "enel x way":  "https://www.enelxway.com/it/it/privati/ricaricare-elettrica/pubblica",
     "enel x":      "https://www.enelxway.com/it/it/privati/ricaricare-elettrica/pubblica",
     "enel":        "https://www.enelxway.com/it/it/privati/ricaricare-elettrica/pubblica",

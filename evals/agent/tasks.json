@@ -197,8 +197,8 @@
       ],
       "pass_criteria": [
         "Checks each returned station's `fee` field instead of trusting the flag name.",
-        "States that `--free` keeps every charger not marked `fee=yes`, so results with no `fee` field are unknown rather than free.",
-        "Separates the chargers explicitly mapped `fee=no` from the untagged ones in the answer.",
+        "States that `--free` requires an explicit `fee=no`; missing fees are excluded.",
+        "If comparing against the unfiltered query, labels missing fee tags as unknown.",
         "Repeats that pitstop reports no per-kWh price and points at `tariff_info_url` where present."
       ],
       "common_failures": [
@@ -206,6 +206,24 @@
         "Reads a missing `fee` field as free.",
         "Promises a free charge from a mapper-entered flag with no date behind it.",
         "Invents a tariff for the chargers that do charge."
+      ]
+    },
+    {
+      "id": "ambiguous-municipality",
+      "prompt": "Find fast public chargers near Livo in Trentino. Show the selected location and whether the results are complete.",
+      "expected_command_path": [
+        "pitstop places Livo --json",
+        "pitstop chargers --comune Livo --provincia TN --fast --public --limit 5 --json"
+      ],
+      "pass_criteria": [
+        "Selects LIVO in TN, ISTAT 022106, rather than LIVO in CO.",
+        "Reads the resolved location and source; does not invent coordinates when resolution fails.",
+        "Reports coverage, cache age, and upstream errors without calling OSM exhaustive or live."
+      ],
+      "common_failures": [
+        "Selects the first substring match without checking province.",
+        "Presents an empty degraded response as proof that no chargers exist.",
+        "Uses the old Bolzano reference coordinate as a standing workaround."
       ]
     }
   ]

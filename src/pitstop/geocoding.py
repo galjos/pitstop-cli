@@ -20,7 +20,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from .cache import write_atomic
+from .cache import fetch_bytes, write_atomic
 from .validation import QueryError, parse_near, validate_download
 
 COMUNI_URL = (
@@ -110,8 +110,7 @@ def _cached_path(refresh: bool, max_age: int, timeout: int) -> Path | None:
             return path
     try:
         req = urllib.request.Request(COMUNI_URL, headers={"User-Agent": "pitstop"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = resp.read()
+        data = fetch_bytes(req, timeout)
     except (urllib.error.URLError, OSError) as e:
         # Graceful fallback: if we cannot fetch, return any stale cache or None.
         print(f"pitstop: could not fetch comune coordinates ({e}); "

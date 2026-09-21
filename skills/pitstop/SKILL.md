@@ -65,10 +65,12 @@ pitstop chargers --comune Bozen --radius 5 --socket ccs --fast --public --json
 
 Key flags:
 - `--comune`: Municipality name. Supports international names (**Rome, Milan, Venice, Florence, Bozen, Mailand, Venise**, etc.).
-- `--fuel`: Substring search. Supports **comma-separated lists** (e.g. `Benzina,Gasolio`).
+- `--fuel`: Substring search. Supports **comma-separated lists** (e.g. `Benzina,Gasolio`). With `--cheapest` and a comma list, each station ranks by its cheapest listed fuel.
 - `--geojson`: Emits a standard GeoJSON FeatureCollection with properties and geometry.
-- Other flags: `--provincia`, `--brand`, `--near`, `--radius`, `--self`/`--served`, `--cheapest`, `--min-price`, `--fresh-within-days`, `--limit`, `--json`.
+- Other station flags: `--provincia`, `--brand`, `--near`, `--radius`, `--self`/`--served`, `--cheapest` (needs `--fuel`), `--min-price`, `--fresh-within-days`, `--max-deviation-pct`, `--drop-outliers`, `--no-comune-validate`, `--limit`, `--json`, `--refresh`, `--max-age`, `--timeout`.
+- Charger flags: `--near`, `--comune`, `--provincia`, `--comune-id` (discover with `places`; use when names duplicate), `--radius`, `--operator`, `--socket`, `--min-power`, `--fast`, `--ultra-fast`, `--free` (only explicit `fee=no`; unknown fee excluded), `--public` (only explicit public access; unknown excluded), `--limit`, `--json`/`--geojson`, `--refresh`, `--timeout`, `--max-age`.
 - Charger power uses `--min-power` in kW; `--fast` means at least 50 kW and `--ultra-fast` at least 150 kW. Inspect the matching socket's power as well as the station maximum.
+- CLI↔MCP names differ: `--min-power` is `min_power_kw`, `--radius` is `radius_km`, `--free`/`--public` are `free_only`/`public_only`, `--fresh-within-days` is `max_age_days`, `--comune-id` is `comune_id`.
 
 ## JSON / GeoJSON contract
 

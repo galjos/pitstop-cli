@@ -17,7 +17,7 @@ from functools import cached_property, lru_cache
 from pathlib import Path
 
 from .validation import validate_search, validate_download, validate_nonnegative
-from .cache import fetch_metadata, write_atomic
+from .cache import fetch_bytes, fetch_metadata, write_atomic
 from .results import SearchResults, coverage_of
 
 ANAGRAFICA_URL = "https://www.mimit.gov.it/images/exportCSV/anagrafica_impianti_attivi.csv"
@@ -161,8 +161,7 @@ def _cached_file(
             return path
 
     req = urllib.request.Request(url, headers={"User-Agent": "pitstop"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = resp.read()
+    data = fetch_bytes(req, timeout)
 
     # MIMIT serves its maintenance page with HTTP 200, so a successful request is
     # not evidence we got the CSV. Caching one blip poisons the whole max_age window.

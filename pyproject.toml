@@ -38,10 +38,11 @@ Changelog     = "https://github.com/galjos/pitstop-cli/blob/main/CHANGELOG.md"
 Issues        = "https://github.com/galjos/pitstop-cli/issues"
 
 [project.optional-dependencies]
-# Upper bound is load-bearing: mcp 2.0.0 (2026-07-28) removed mcp.server.fastmcp,
-# which mcp_server.py imports. Lift it only together with that migration.
-mcp = ["mcp>=1.12,<2"]
-dev = ["pytest>=7", "mcp>=1.12,<2"]
+# mcp_server.py imports MCPServer/FastMCP and ToolAnnotations through a
+# version shim covering mcp 1.12+ and 2.x; keep the 1.12 floor (read-only
+# annotations, structured output) on both extras.
+mcp = ["mcp>=1.12"]
+dev = ["pytest>=7", "mcp>=1.12"]
 
 [project.scripts]
 pitstop = "pitstop.cli:main"

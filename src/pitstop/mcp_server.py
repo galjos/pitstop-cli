@@ -5,15 +5,22 @@ optional `mcp` extra: pip install "pitstop-cli[mcp]". Run with `pitstop-mcp`."""
 
 from typing import Any, Optional
 
-from mcp.server.fastmcp import FastMCP
-from mcp.types import ToolAnnotations
+try:  # mcp 2.x renamed FastMCP to MCPServer and moved ToolAnnotations out of mcp.types
+    from mcp.server.mcpserver import MCPServer as _Server
+    from mcp_types import ToolAnnotations
+    _ANNOTATIONS_KW = {"read_only_hint": True, "destructive_hint": False,
+                       "idempotent_hint": True, "open_world_hint": True}
+except ImportError:  # mcp 1.x
+    from mcp.server.fastmcp import FastMCP as _Server
+    from mcp.types import ToolAnnotations
+    _ANNOTATIONS_KW = {"readOnlyHint": True, "destructiveHint": False,
+                       "idempotentHint": True, "openWorldHint": True}
 
 from . import chargers as ev_chargers
 from . import core, geocoding, validation
 
-mcp = FastMCP("pitstop")
-_READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False,
-                             idempotentHint=True, openWorldHint=True)
+mcp = _Server("pitstop")
+_READ_ONLY = ToolAnnotations(**_ANNOTATIONS_KW)
 
 _CAVEATS = (
     " Data is daily (not real-time): prices are as of ~08:00 the day before "

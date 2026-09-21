@@ -15,7 +15,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .cache import file_metadata, write_atomic
+from .cache import fetch_bytes, file_metadata, write_atomic
 from .validation import validate_download
 from .version import __version__
 
@@ -80,8 +80,7 @@ def fetch_elements(
     )
     error = None
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = resp.read()
+        data = fetch_bytes(req, timeout)
     except (urllib.error.URLError, OSError) as e:
         error = str(e)
         print(f"pitstop: Overpass fetch failed ({error}); "

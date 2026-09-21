@@ -14,6 +14,22 @@ async def check_mcp(env):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
+    # CallToolResult.isError on mcp 1.x, is_error on 2.x.
+    def _result_error(result):
+        for name in ("isError", "is_error"):
+            value = getattr(result, name, None)
+            if value is not None:
+                return value
+        raise AssertionError("CallToolResult has neither isError nor is_error")
+
+    # structuredContent on mcp 1.x, structured_content on 2.x.
+    def _structured(result):
+        for name in ("structuredContent", "structured_content"):
+            value = getattr(result, name, None)
+            if value is not None:
+                return value
+        raise AssertionError("CallToolResult has neither structuredContent nor structured_content")
+
     params = StdioServerParameters(command=sys.executable, args=["-m", "pitstop.mcp_server"], env=env)
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -22,13 +38,20 @@ async def check_mcp(env):
             assert {t.name for t in tools} == {
                 "find_stations", "find_cheapest", "find_chargers", "find_places", "list_fuels", "get_stats"
             }
-            assert all(t.annotations and t.annotations.readOnlyHint and
-                       t.annotations.destructiveHint is False for t in tools)
+            # ToolAnnotations field names are camelCase on mcp 1.x, snake_case on 2.x.
+            def _ann(tool, *names):
+                for name in names:
+                    value = getattr(tool.annotations, name, None)
+                    if value is not None:
+                        return value
+                return None
+            assert all(t.annotations and _ann(t, "readOnlyHint", "read_only_hint") and
+                       _ann(t, "destructiveHint", "destructive_hint") is False for t in tools)
             result = await session.call_tool("find_places", {"query": "Livo"})
-            assert not result.isError and result.structuredContent["matched_count"] == 2
-            assert {p["provincia"] for p in result.structuredContent["places"]} == {"CO", "TN"}
+            assert not _result_error(result) and _structured(result)["matched_count"] == 2
+            assert {p["provincia"] for p in _structured(result)["places"]} == {"CO", "TN"}
             result = await session.call_tool("find_chargers", {"near": "nan,11"})
-            assert result.isError
+            assert _result_error(result)
     print("Installed MCP: six read-only tools, structured discovery, invalid-input error passed")
 
 

@@ -76,11 +76,11 @@ pitstop chargers --comune Livo --provincia TN --json
 pitstop chargers --comune-id 021008 --radius 5 --fast --json
 ```
 
-`stations` flags: `--comune`, `--provincia`, `--brand`, `--near "lat,lon"`, `--radius`, `--fuel` (substring, case-insensitive), `--self`, `--served`, `--cheapest` (needs `--fuel`), `--min-price`, `--fresh-within-days`, `--max-deviation-pct`, `--no-comune-validate`, `--limit`, `--json`, `--geojson`. Choose one output format. `--limit 0` returns every match.
+`stations` flags: `--comune`, `--provincia`, `--brand`, `--near "lat,lon"`, `--radius`, `--fuel` (substring, case-insensitive), `--self`, `--served`, `--cheapest` (needs `--fuel`), `--min-price`, `--fresh-within-days`, `--max-deviation-pct`, `--drop-outliers`, `--no-comune-validate`, `--limit`, `--json`, `--geojson`. Choose one output format. `--limit 0` returns every match.
 
 Distances and radii are straight-line measurements, not driving distances or travel times.
 
-Loading flags (`--refresh`, `--max-age` in seconds, `--timeout` in seconds) apply to MIMIT commands and charger searches. The default caches last 24 hours for MIMIT, seven days for OSM, and 30 days for the municipality reference. `--refresh` also refreshes a charger's municipality lookup; `--max-age` controls its charger results. `--max-age 0` accepts cached files of any age. `places` supports `--refresh` and `--timeout`.
+Loading flags (`--refresh`, `--max-age` in seconds, `--timeout` in seconds) apply to MIMIT commands and charger searches. The default caches last 24 hours for MIMIT, seven days for OSM, and 30 days for the municipality reference. `--refresh` also refreshes a charger's municipality lookup; `--max-age` controls its charger results. `--max-age 0` accepts cached files of any age. `places` supports `--refresh` and `--timeout` (no `--max-age`).
 
 Every returned price carries a `median_basis`. A `screened` price also carries `regional_median` and `deviation_pct`, plus `outlier: true` when it is >15% below the local median **or** below the Tukey lower fence Q1−1.5·IQR (the Tukey rule catches misreports in tight markets that the percent rule alone misses). The `outlier` key is emitted **only when it is true**, so read it as optional. Pass `--drop-outliers` to remove flagged prices entirely.
 

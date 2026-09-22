@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-09-22
+
+### Added
+
+- MCP server works with SDK 1.12+ and 2.x through a version shim; the `mcp<2`
+  pin is lifted and CI covers both majors.
+- Weekly geographic acceptance checks for municipality centers and duplicate
+  names, with upstream outages reported distinctly from location failures.
+- Bounded retries with backoff for MIMIT, comune-reference, and Overpass
+  downloads.
+
+### Fixed
+
+- Skill documents every flag, the multi-fuel `--cheapest` rule, and the
+  CLI-to-MCP parameter name map.
+
 ## [1.2.0] - 2026-09-10
 
 ### Added

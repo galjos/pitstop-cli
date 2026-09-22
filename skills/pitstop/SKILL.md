@@ -13,14 +13,14 @@ metadata:
             {
               "id": "uvx",
               "kind": "uvx",
-              "package": "pitstop-cli>=1.2.0",
+              "package": "pitstop-cli>=1.3.0",
               "bins": ["pitstop"],
               "label": "Run pitstop on demand (uvx)",
             },
             {
               "id": "pipx",
               "kind": "pipx",
-              "package": "pitstop-cli>=1.2.0",
+              "package": "pitstop-cli>=1.3.0",
               "bins": ["pitstop"],
               "label": "Install pitstop (pipx)",
             },
